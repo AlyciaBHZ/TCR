@@ -1,0 +1,15 @@
+conditioned/saved_model
+conditioned/__pycache__
+data/collected data
+scripts/generation/tcr_sidechain
+
+# === Python 垃圾文件 (必须屏蔽) ===
+__pycache__/
+*.pyc
+
+# === 模型权重 (大文件杀手) ===
+*.pt
+*.pth
+*.ckpt
+*.bin
+*.opt

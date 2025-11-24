@@ -1,0 +1,30 @@
+CDR3β Pure Language Model Pretraining Log
+No conditioning information - intrinsic sequence modeling
+Training samples: 6,510,795
+Testing samples: 723,422
+Batch size: 4096
+Accumulation steps: 4
+Test frequency: every 25 epochs
+======================================================================
+Epoch,Train_Loss,Test_Loss,Test_PPL,Status,Notes
+0,2.047113,1.788057,5.9778,IMPROVED,PPL improved: 5.98
+25,1.241989,1.355020,3.8768,IMPROVED,PPL improved: 3.88
+50,1.214030,1.140458,3.1282,IMPROVED,PPL improved: 3.13
+75,1.204298,1.254783,3.5071,OK,PPL: 3.51 (+12.1%), patience: 25/128
+100,1.179180,1.199598,3.3188,OK,PPL: 3.32 (+6.1%), patience: 50/128
+125,1.165461,1.148257,3.1527,OK,PPL: 3.15 (+0.8%), patience: 75/128
+150,1.142075,1.208353,3.3480,OK,PPL: 3.35 (+7.0%), patience: 100/128
+175,1.130030,1.249226,3.4876,OK,PPL: 3.49 (+11.5%), patience: 125/128
+200,1.141354,1.140219,3.1275,IMPROVED,PPL improved: 3.13
+225,1.143556,1.227867,3.4139,OK,PPL: 3.41 (+9.2%), patience: 25/128
+250,1.171250,1.205460,3.3383,OK,PPL: 3.34 (+6.7%), patience: 50/128
+275,1.138579,1.225749,3.4067,OK,PPL: 3.41 (+8.9%), patience: 75/128
+300,1.153606,1.103934,3.0160,IMPROVED,PPL improved: 3.02
+325,1.176169,1.201439,3.3249,OK,PPL: 3.32 (+10.2%), patience: 25/128
+350,1.117141,1.073608,2.9259,IMPROVED,PPL improved: 2.93
+375,1.169533,1.183927,3.2672,OK,PPL: 3.27 (+11.7%), patience: 25/128
+400,1.160792,1.186840,3.2767,OK,PPL: 3.28 (+12.0%), patience: 50/128
+425,1.124738,1.192939,3.2968,OK,PPL: 3.30 (+12.7%), patience: 75/128
+450,1.140656,1.129204,3.0932,OK,PPL: 3.09 (+5.7%), patience: 100/128
+475,1.148390,1.154800,3.1734,OK,PPL: 3.17 (+8.5%), patience: 125/128
+500,1.108732,1.075481,2.9314,OK,PPL: 2.93 (+0.2%), patience: 150/128

@@ -1,0 +1,3 @@
+train.py is the training script which calls the data.py and model.py
+    use train.py to train the model under different conditions
+    train.py will stop training after no improvement

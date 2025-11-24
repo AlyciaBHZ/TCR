@@ -1,0 +1,38 @@
+{
+  "total_constructs": 30,
+  "valid_constructs": 30,
+  "invalid_constructs": 0,
+  "length_stats": {
+    "count": 30.0,
+    "mean": 111.5,
+    "std": 2.837556014941561,
+    "min": 109.0,
+    "25%": 109.25,
+    "50%": 111.0,
+    "75%": 112.0,
+    "max": 119.0
+  },
+  "confidence_stats": {
+    "count": 30.0,
+    "mean": 0.7423849006493887,
+    "std": 0.029805367255168348,
+    "min": 0.663274347782135,
+    "25%": 0.7250371426343918,
+    "50%": 0.7421734929084778,
+    "75%": 0.7629809230566025,
+    "max": 0.8011597990989685
+  },
+  "per_target_counts": {
+    "ASSYISPEK_A1101": 3,
+    "LYVDSLFFL_A2402": 3,
+    "SALQSLLQH_A1101": 3,
+    "SLLQHLIGL_A0201": 3,
+    "SLLQHLIGL_A2402": 3,
+    "VVGAVGVGK_A0301": 3,
+    "VVGAVGVGK_A1101": 3,
+    "VVVGADGVGK_A1101": 3,
+    "VVVGAVGVGK_A0301": 3,
+    "VVVGAVGVGK_A1101": 3
+  },
+  "analysis_date": "2025-09-18T15:49:56.416505"
+}

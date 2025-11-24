@@ -1,0 +1,31 @@
+CDR3β-Peptide-MHC Paired Data Finetuning Log
+Using CollapseProteinDataset from data_clp.py
+Pretrained model: saved_model/cdr3_pretrain/cdr3_model_epoch_500
+Training samples: 220,555
+Testing samples: 446
+Batch size: 1024
+Accumulation steps: 16
+Test frequency: every 25 epochs
+Conditioning info: ['pep', 'mhc', 'lv', 'lj', 'hv', 'hj']
+======================================================================
+Epoch,Train_Loss,Test_Loss,Test_PPL,Status,Notes
+0,2.025208,2.079637,8.0016,IMPROVED,PPL improved: 8.00
+
+# Resumed training from epoch 125
+
+# Resumed training from epoch 125
+125,1.315110,1.696624,5.4555,IMPROVED,PPL improved: 5.46
+150,1.323756,1.669102,5.3074,IMPROVED,PPL improved: 5.31
+175,1.295730,1.652480,5.2199,IMPROVED,PPL improved: 5.22
+200,1.216178,1.637411,5.1418,IMPROVED,PPL improved: 5.14
+225,1.231901,1.630123,5.1045,IMPROVED,PPL improved: 5.10
+250,1.220219,1.630728,5.1076,OK,PPL: 5.11 (+0.1%), patience: 25/150
+275,1.241766,1.626421,5.0856,IMPROVED,PPL improved: 5.09
+300,1.202821,1.616358,5.0347,IMPROVED,PPL improved: 5.03
+325,1.200567,1.604766,4.9767,IMPROVED,PPL improved: 4.98
+350,1.231149,1.611776,5.0117,OK,PPL: 5.01 (+0.7%), patience: 25/150
+375,1.220971,1.598076,4.9435,IMPROVED,PPL improved: 4.94
+400,1.215573,1.595553,4.9311,IMPROVED,PPL improved: 4.93
+425,1.217757,1.597655,4.9414,OK,PPL: 4.94 (+0.2%), patience: 25/150
+450,1.223102,1.602088,4.9634,OK,PPL: 4.96 (+0.7%), patience: 50/150
+475,1.191356,1.594030,4.9236,IMPROVED,PPL improved: 4.92

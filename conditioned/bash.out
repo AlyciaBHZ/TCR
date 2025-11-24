@@ -1,0 +1,77 @@
+/mnt/rna01/zwlexa/project/1030/conditioned
+Starting concurrent execution...
+
+Starting script 1: python aa_predict.py -c 1 -i 3 -m [1,2,3,4,5,6,7,8,9,10,11]
+Starting script 2: python aa_predict.py -c 2 -i 3 -m [1,2,3,4,5,6,7,8,9,10,11]
+Script 1 timed out after 120.00 minutes and was terminated.
+Script 1 finished.
+
+Starting script 3: python aa_predict.py -c 3 -i 3 -m [1,2,3,4,5,6,7,8,9,10,11]
+Script 2 timed out after 120.00 minutes and was terminated.
+Script 2 finished.
+
+Starting script 4: python aa_predict.py -c 4 -i 3 -m [1,2,3,4,5,6,7,8,9,10,11]
+Script 3 timed out after 120.00 minutes and was terminated.
+Script 3 finished.
+
+Starting script 5: python aa_predict.py -c 5 -i 3 -m [1,2,3,4,5,6,7,8,9,10,11]
+Script 4 timed out after 120.00 minutes and was terminated.
+Script 4 finished.
+
+Starting script 6: python aa_predict.py -c 6 -i 3 -m [1,2,3,4,5,6,7,8,9,10,11]
+Script 5 timed out after 120.00 minutes and was terminated.
+Script 5 finished.
+
+Starting script 7: python aa_predict.py -c 1 -i 1 -m [2,3,4,5,6,7,8,9,10,11,12]
+Script 6 timed out after 120.00 minutes and was terminated.
+Script 6 finished.
+
+Starting script 8: python aa_predict.py -c 2 -i 1 -m [2,3,4,5,6,7,8,9,10,11,12]
+Script 7 timed out after 120.00 minutes and was terminated.
+Script 7 finished.
+
+Starting script 9: python aa_predict.py -c 3 -i 1 -m [2,3,4,5,6,7,8,9,10,11,12]
+Script 8 timed out after 120.00 minutes and was terminated.
+Script 8 finished.
+
+Starting script 10: python aa_predict.py -c 4 -i 1 -m [2,3,4,5,6,7,8,9,10,11,12]
+Script 9 timed out after 120.00 minutes and was terminated.
+Script 9 finished.
+
+Starting script 11: python aa_predict.py -c 5 -i 1 -m [2,3,4,5,6,7,8,9,10,11,12]
+Script 10 timed out after 120.00 minutes and was terminated.
+Script 10 finished.
+
+Starting script 12: python aa_predict.py -c 6 -i 1 -m [2,3,4,5,6,7,8,9,10,11,12]
+Script 11 timed out after 120.00 minutes and was terminated.
+Script 11 finished.
+
+Starting script 13: python aa_predict.py -c 1 -i 2 -m [2,3,4,5,6,7,8,9,10,11,12,13]
+Script 12 timed out after 120.00 minutes and was terminated.
+Script 12 finished.
+
+Starting script 14: python aa_predict.py -c 2 -i 2 -m [2,3,4,5,6,7,8,9,10,11,12,13]
+Script 14 exited with an error: Command '['python', 'aa_predict.py', '-c', '2', '-i', '2', '-m', '[2,3,4,5,6,7,8,9,10,11,12,13]']' died with <Signals.SIGKILL: 9>.
+Script 14 finished.
+
+Starting script 15: python aa_predict.py -c 3 -i 2 -m [2,3,4,5,6,7,8,9,10,11,12,13]
+Script 13 exited with an error: Command '['python', 'aa_predict.py', '-c', '1', '-i', '2', '-m', '[2,3,4,5,6,7,8,9,10,11,12,13]']' died with <Signals.SIGKILL: 9>.
+Script 13 finished.
+
+Starting script 16: python aa_predict.py -c 4 -i 2 -m [2,3,4,5,6,7,8,9,10,11,12,13]
+Script 15 exited with an error: Command '['python', 'aa_predict.py', '-c', '3', '-i', '2', '-m', '[2,3,4,5,6,7,8,9,10,11,12,13]']' died with <Signals.SIGKILL: 9>.
+Script 15 finished.
+
+Starting script 17: python aa_predict.py -c 5 -i 2 -m [2,3,4,5,6,7,8,9,10,11,12,13]
+Script 16 exited with an error: Command '['python', 'aa_predict.py', '-c', '4', '-i', '2', '-m', '[2,3,4,5,6,7,8,9,10,11,12,13]']' died with <Signals.SIGKILL: 9>.
+Script 16 finished.
+
+Starting script 18: python aa_predict.py -c 6 -i 2 -m [2,3,4,5,6,7,8,9,10,11,12,13]
+Script 17 exited with an error: Command '['python', 'aa_predict.py', '-c', '5', '-i', '2', '-m', '[2,3,4,5,6,7,8,9,10,11,12,13]']' died with <Signals.SIGKILL: 9>.
+Script 17 finished.
+
+Script 18 timed out after 120.00 minutes and was terminated.
+Script 18 finished.
+
+All scripts executed.
+slurmstepd-zgpuA402: error: Detected 5 oom_kill events in StepId=1037669.batch. Some of the step tasks have been OOM Killed.

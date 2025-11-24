@@ -1,0 +1,13 @@
+target_idx,peptide,mhc,exact_matches,peptide_matches,mhc_matches,exact_cdr3b_sequences,peptide_cdr3b_sequences,mhc_cdr3b_sequences
+0,VVGAVGVGK,A1101,0,1,0,[],['CASSLTSGGFDEQFF'],[]
+1,VVVGADGVGK,A1101,0,1,0,[],['CASSLAAGGYFNEQFF'],[]
+2,VVGK,A1101,0,0,0,[],[],[]
+3,VVGAVGVGK,A0301,0,1,0,[],['CASSLTSGGFDEQFF'],[]
+4,VVVGAVGVGK,A0201,0,2,0,[],"['CASSVAGGGQETQYF', 'CASSLSFRQGLREQYF']",[]
+5,SLLQHLIGL,A0201,0,0,0,[],[],[]
+6,SLLQHLIGL,A2402,0,0,0,[],[],[]
+7,LYVDSLFFL,A1101,0,0,0,[],[],[]
+8,SYISPEK,A1101,0,0,0,[],[],[]
+9,SALQSLLQH,A1101,0,0,0,[],[],[]
+10,AS,A2402,0,0,0,[],[],[]
+11,VVGAVG,A0301,0,0,0,[],[],[]

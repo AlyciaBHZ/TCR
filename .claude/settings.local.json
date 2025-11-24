@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(/C:\\Users\\zwl62\\OneDrive - National University of Singapore\\Desktop\\TCR\\TCR/**)",
+      "Read(/C:\\Users\\zwl62\\OneDrive - National University of Singapore\\Desktop\\TCR\\TCR/**)",
+      "Read(/C:\\Users\\zwl62\\OneDrive - National University of Singapore\\Desktop\\TCR\\TCR\\conditioned/**)",
+      "Read(/C:\\Users\\zwl62\\OneDrive - National University of Singapore\\Desktop\\TCR\\TCR\\conditioned/**)",
+      "Read(/C:\\Users\\zwl62\\OneDrive - National University of Singapore\\Desktop\\TCR\\TCR\\psi_model/**)",
+      "Read(/C:\\Users\\zwl62\\OneDrive - National University of Singapore\\Desktop\\TCR\\TCR\\tcr_sidechain/**)",
+      "Read(/C:\\Users\\zwl62\\OneDrive - National University of Singapore\\Desktop\\TCR\\TCR\\data\\collected data\\final_data/**)",
+      "Read(/C:\\Users\\zwl62\\OneDrive - National University of Singapore\\Desktop\\TCR\\TCR\\data\\collected data\\final_data/**)",
+      "Read(/C:\\Users\\zwl62\\OneDrive - National University of Singapore\\Desktop\\TCR\\TCR\\data\\collected data\\final_data/**)",
+      "Read(/C:\\Users\\zwl62\\OneDrive - National University of Singapore\\Desktop\\TCR\\TCR\\data\\collected data\\final_data/**)",
+      "Read(/C:\\Users\\zwl62\\OneDrive - National University of Singapore\\Desktop\\TCR\\TCR\\data\\collected data\\final_data/**)",
+      "Read(/C:\\Users\\zwl62\\OneDrive - National University of Singapore\\Desktop\\TCR\\TCR\\psi_model/**)",
+      "Read(/C:\\Users\\zwl62\\OneDrive - National University of Singapore\\Desktop\\TCR\\TCR\\psi_model/**)",
+      "Bash(python:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

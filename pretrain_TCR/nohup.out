@@ -1,0 +1,51 @@
+Starting CDR3β Pure Language Model Pretraining...
+============================================================
+This model learns intrinsic CDR3β patterns without conditioning
+Key applications:
+  - Interpretability analysis
+  - Visualization of CDR3β structure
+  - Scientific analysis of TCR encoding
+============================================================
+Device: cuda
+Parameters: 806,504
+Loading CDR3β-only data from /home/bota/lexa/plm/pretrain/data/tcrdb/processed_tcrdb.csv
+Total records: 9,096,120
+After cleaning: 7,234,217
+CDR3β-only dataset size: 6,510,795
+CDR3β length stats: min=6, max=25, mean=14.7
+Loading CDR3β-only data from /home/bota/lexa/plm/pretrain/data/tcrdb/processed_tcrdb.csv
+Total records: 9,096,120
+After cleaning: 7,234,217
+CDR3β-only dataset size: 723,422
+
+================================================================================
+CDR3β PURE LANGUAGE MODEL - PROGRESS MONITOR
+================================================================================
+ Epoch | Train Loss | Test Loss | Test PPL |   Status | Notes
+--------------------------------------------------------------------------------
+     0 |     2.0471 |    1.7881 |     5.98 | IMPROVED | PPL improved: 5.98
+    25 |     1.2420 |    1.3550 |     3.88 | IMPROVED | PPL improved: 3.88
+    50 |     1.2140 |    1.1405 |     3.13 | IMPROVED | PPL improved: 3.13
+    75 |     1.2043 |    1.2548 |     3.51 |       OK | PPL: 3.51 (+12.1%), patience: 25/128
+   100 |     1.1792 |    1.1996 |     3.32 |       OK | PPL: 3.32 (+6.1%), patience: 50/128
+   125 |     1.1655 |    1.1483 |     3.15 |       OK | PPL: 3.15 (+0.8%), patience: 75/128
+   150 |     1.1421 |    1.2084 |     3.35 |       OK | PPL: 3.35 (+7.0%), patience: 100/128
+   175 |     1.1300 |    1.2492 |     3.49 |       OK | PPL: 3.49 (+11.5%), patience: 125/128
+   200 |     1.1414 |    1.1402 |     3.13 | IMPROVED | PPL improved: 3.13
+   225 |     1.1436 |    1.2279 |     3.41 |       OK | PPL: 3.41 (+9.2%), patience: 25/128
+   250 |     1.1713 |    1.2055 |     3.34 |       OK | PPL: 3.34 (+6.7%), patience: 50/128
+   275 |     1.1386 |    1.2257 |     3.41 |       OK | PPL: 3.41 (+8.9%), patience: 75/128
+   300 |     1.1536 |    1.1039 |     3.02 | IMPROVED | PPL improved: 3.02
+   325 |     1.1762 |    1.2014 |     3.32 |       OK | PPL: 3.32 (+10.2%), patience: 25/128
+   350 |     1.1171 |    1.0736 |     2.93 | IMPROVED | PPL improved: 2.93
+   375 |     1.1695 |    1.1839 |     3.27 |       OK | PPL: 3.27 (+11.7%), patience: 25/128
+   400 |     1.1608 |    1.1868 |     3.28 |       OK | PPL: 3.28 (+12.0%), patience: 50/128
+   425 |     1.1247 |    1.1929 |     3.30 |       OK | PPL: 3.30 (+12.7%), patience: 75/128
+   450 |     1.1407 |    1.1292 |     3.09 |       OK | PPL: 3.09 (+5.7%), patience: 100/128
+   475 |     1.1484 |    1.1548 |     3.17 |       OK | PPL: 3.17 (+8.5%), patience: 125/128
+   500 |     1.1087 |    1.0755 |     2.93 |       OK | PPL: 2.93 (+0.2%), patience: 150/128
+--------------------------------------------------------------------------------
+Early stopping: no improvement in perplexity for 128 test steps.
+Best PPL achieved: 2.93
+Total epochs: 500
+CDR3β pure language model training completed!
