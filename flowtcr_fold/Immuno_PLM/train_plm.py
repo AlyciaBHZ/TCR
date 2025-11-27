@@ -124,9 +124,13 @@ def main():
             neg_tokens = batch["tokens_neg"].to(device) if batch["tokens_neg"] is not None else None
             neg_mask = batch["mask_neg"].to(device) if batch["mask_neg"] is not None else None
 
+            # Forward pass 1: Anchor
+            out_anchor = model(pos_tokens, pos_mask, region_slices=batch["slices_pos"])
+            anchor = out_anchor["pooled"]
+            
+            # Forward pass 2: Positive (same input, different dropout mask)
             out_pos = model(pos_tokens, pos_mask, region_slices=batch["slices_pos"])
-            anchor = out_pos["pooled"]
-            positive = out_pos["pooled"]  # using self-positive; replace with augmentation if available
+            positive = out_pos["pooled"]
 
             negatives = None
             if neg_tokens is not None:

@@ -89,30 +89,37 @@ class FlowDataset(Dataset):
 
     def _build_tokens(self, sample: Sample) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, slice]]:
         """
-        Build token ids and region slices using BasicTokenizer. If ESM tokenizer
-        is passed, fall back to BasicTokenizer for now to preserve custom tokens.
+        Build token ids and region slices. Uses self.tokenizer directly.
         """
-        tok = self.tokenizer if isinstance(self.tokenizer, BasicTokenizer) else BasicTokenizer()
-        pad = tok.stoi["[PAD]"]
-        sep = tok.stoi["[SEP]"]
-        cls = tok.stoi["[CLS]"]
+        tok = self.tokenizer
+        # Handle different tokenizer interfaces (ESM vs Basic)
+        if hasattr(tok, "cls_token_id"):
+             # ESM tokenizer
+            cls_idx = tok.cls_token_id
+            sep_idx = tok.eos_token_id # ESM uses eos as sep/end
+            pad_idx = tok.pad_token_id
+        else:
+            # BasicTokenizer
+            cls_idx = tok.stoi["[CLS]"]
+            sep_idx = tok.stoi["[SEP]"]
+            pad_idx = tok.stoi["[PAD]"]
 
-        tokens: List[int] = [cls]
+        tokens: List[int] = [cls_idx]
 
         start_pep = len(tokens)
         tokens.extend(tok.encode(sample.peptide))
         end_pep = len(tokens)
-        tokens.append(sep)
+        tokens.append(sep_idx)
 
         start_mhc = len(tokens)
         tokens.extend(tok.encode(sample.mhc))
         end_mhc = len(tokens)
-        tokens.append(sep)
+        tokens.append(sep_idx)
 
         start_cdr3 = len(tokens)
         tokens.extend(tok.encode(sample.cdr3b))
         end_cdr3 = len(tokens)
-        tokens.append(sep)
+        tokens.append(sep_idx)
 
         mask = [1] * len(tokens)
         slices = {"pep": slice(start_pep, end_pep), "mhc": slice(start_mhc, end_mhc), "cdr3b": slice(start_cdr3, end_cdr3)}

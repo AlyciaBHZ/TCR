@@ -51,17 +51,15 @@ eg_type emitted.
 
 ## 3. Code Layout (kept modular) and Legacy Pointers
 flowtcr_fold/
-  README.md
+  README.md, TODO.md
   docs/ USER_MANUAL.md, initial_plan*.md
   data/ dataset.py, tokenizer.py, convert_csv_to_jsonl.py
   common/ utils.py (ckpt every 50 epochs; early stop after 100)
-  data/ dataset.py, tokenizer.py, convert_csv_to_jsonl.py
-  Immuno_PLM/ (model, train, eval)
-  TCRFold_Light/ (model, train_ppi_impl, train_tcr_impl, train_struct_impl)
-  FlowTCR_Gen/ (model, train_flow, pipeline_impl)
-  docs/ USER_MANUAL.md, initial_plan*.md
-  tools/ (optional)
-  TODO.md, README.md
+  Immuno_PLM/ immuno_plm.py, train_plm.py, eval_plm.py
+  TCRFold_Light/ tcrfold_light.py, train_ppi_impl.py, train_tcr_impl.py, train_struct_impl.py, train_with_energy.py
+  FlowTCR_Gen/ flow_gen.py, train_flow.py, pipeline_impl.py
+  physics/ evoef_runner.py, energy_dataset.py (EvoEF2 wrapper + labels)
+  tools/ EvoEF2/ (binary + params, see EVOEF2_INTEGRATION.md)
 legacy refs:
   conditioned/model.py          # topology pair bias
   conditioned/src/Evoformer.py  # Evoformer backbone
@@ -69,18 +67,20 @@ legacy refs:
   conditioned/data.py           # data loading patterns
 
 ## 4. Training Preferences
-- Save checkpoint every 50 epochs; early stop if no improvement for 100 epochs (	raining/utils.py wired into scripts).
-- Batch semantics: PLM batches multiple sequences (token-level MLM per sequence); Flow/structure currently placeholders—real data will include seq/pair/geometry/energy supervision.
+- Save checkpoint every 50 epochs; early stop if no improvement for 100 epochs (common/utils.py wired into scripts).
+- Batch semantics: PLM batches multiple sequences (token-level MLM per sequence); Flow/structure batches carry seq/pair/geometry/energy when available.
 
 ## 5. Status & TODO
-- Implemented: data/tokenizer, triplet sampler, PLM training (InfoNCE+MLM), Evoformer-lite wrapper, simplified flow matching, early stop/ckpt, docs.
-- Pending: real PSI+topology fusion (reuse psi_model pair logic), stronger hard negatives, real structure data + EvoEF2 energy + TM-align PSSM, full flow loss with conditioning/attention-contact alignment, EvoEF2-based refinement and baseline runners (tFold/AF2).
+- Implemented: data/tokenizer, hard-negative sampler, PLM training (InfoNCE+MLM), Evoformer-lite wrapper, simplified flow matching, EvoEF2 wrapper + energy dataset, early stop/ckpt, docs.
+- Pipeline: Flow -> TCRFold-Light critic -> optional EvoEF2 refine (scaffold PDB) wired in FlowTCR_Gen/pipeline_impl.py.
+- Pending: real PSI+topology fusion (psi_model pair logic), stronger decoys, real structure data + EvoEF2 energies/TM-align PSSM, full flow loss with conditioning + attention-contact alignment, AF2/tFold baselines.
 
 ## 6. Quickstart (placeholder)
 - Clean: python flowtcr_fold/data/convert_csv_to_jsonl.py --input data/trn.csv --output data/trn.jsonl
-- PLM train: python flowtcr_fold/training/plm/train_plm.py --data data/trn.csv --epochs 1 --batch_size 8
-- PLM eval: python flowtcr_fold/training/plm/eval_plm.py --data data/val.csv --checkpoint checkpoints/plm/immuno_plm.pt
-- Flow/structure: run after real data/physics hooked.
+- PLM train: python flowtcr_fold/Immuno_PLM/train_plm.py --data data/trn.csv --epochs 1 --batch_size 8
+- PLM eval: python flowtcr_fold/Immuno_PLM/eval_plm.py --data data/val.csv --checkpoint checkpoints/plm/immuno_plm.pt
+- Flow: python flowtcr_fold/FlowTCR_Gen/train_flow.py --data data/trn.csv
+- TCRFold-Light (energy-supervised): python flowtcr_fold/TCRFold_Light/train_with_energy.py --pdb_dir data/pdb_structures
 
 ## 7. Target Inference Loop
 Flow sampling -> TCRFold-Light critique -> EvoEF2 refine -> rank by energy + structure confidence.

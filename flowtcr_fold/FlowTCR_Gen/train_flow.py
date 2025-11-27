@@ -11,6 +11,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from flowtcr_fold.data.dataset import FlowDataset
+from flowtcr_fold.data.tokenizer import vocab_size
 from flowtcr_fold.FlowTCR_Gen.flow_gen import FlowMatchingModel
 from flowtcr_fold.common.utils import save_checkpoint, EarlyStopper
 
@@ -39,7 +40,7 @@ def main():
     ds = FlowDataset(args.data, split="train")
     loader = DataLoader(ds, batch_size=args.batch_size, shuffle=True, collate_fn=collate)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = FlowMatchingModel().to(device)
+    model = FlowMatchingModel(vocab_size=vocab_size(ds.tokenizer)).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=args.lr)
     stopper = EarlyStopper(patience=100)
 

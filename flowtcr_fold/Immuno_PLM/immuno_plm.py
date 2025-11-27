@@ -95,6 +95,11 @@ class ImmunoPLM(nn.Module):
             self.decoder = nn.Linear(hidden_dim, vocab_size)
         self.topology_bias = TopologyBias(z_dim=z_dim)
         self.proj = nn.Linear(self.embed_dim, hidden_dim)
+        
+        # Fusion layer: project pair bias to sequence dimension
+        self.pair_fusion = nn.Linear(z_dim, hidden_dim)
+        self.dropout = nn.Dropout(0.1)
+        
         self.pool = nn.AdaptiveAvgPool1d(1)
         self.norm = nn.LayerNorm(hidden_dim)
 
@@ -125,11 +130,16 @@ class ImmunoPLM(nn.Module):
 
         z_topo = None
         if region_slices:
-            zs = []
+            # Pre-allocate context tensor [B, L, z_dim]
+            # We use tokens.size(1) as L
+            L = tokens.size(1)
+            z_context_all = torch.zeros(tokens.size(0), L, self.z_dim, device=tokens.device)
+            
             for b_idx in range(tokens.size(0)):
                 region_dict = region_slices[b_idx] if b_idx < len(region_slices) else None
                 if region_dict is None:
                     continue
+                
                 # reorder: HD (cdr3b) first, then others
                 idx_pairs = []
                 if "cdr3b" in region_dict:
@@ -140,10 +150,30 @@ class ImmunoPLM(nn.Module):
                     idx_pairs.append((sl.start, sl.stop))
                 if not idx_pairs:
                     continue
-                z_bias = self.topology_bias(idx_pairs, tokens.size(1), tokens.device)
+                
+                # z_bias: [L, L, z_dim]
+                z_bias = self.topology_bias(idx_pairs, L, tokens.device)
                 if z_bias is not None:
-                    zs.append(z_bias)
-            if zs:
-                z_topo = torch.stack(zs, dim=0)
+                    # Reduce to [L, z_dim]
+                    z_ctx = z_bias.max(dim=1)[0]
+                    z_context_all[b_idx] = z_ctx
+
+            # Fuse
+            s = s + self.pair_fusion(z_context_all)
+            
+            # For return, we can just return None or the last z_bias for debug, 
+            # but z_topo as [B, L, L, D] is expensive and not used by loss.
+            # We'll return z_context_all as "z_bias" proxy or None.
+            z_topo = z_context_all
+
+        # Apply dropout before pooling (crucial for SimCSE)
+        s = self.dropout(s)
+
+        if mask is None:
+            pooled = s.mean(dim=1)
+        else:
+            mask = mask.unsqueeze(-1)
+            pooled = (s * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1.0)
+        pooled = self.norm(pooled)
 
         return {"s": s, "pooled": pooled, "z_bias": z_topo}
