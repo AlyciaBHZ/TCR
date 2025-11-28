@@ -32,7 +32,7 @@ from torch.utils.data import DataLoader
 
 from flowtcr_fold.data.dataset import FlowDataset
 from flowtcr_fold.data.tokenizer import vocab_size, BasicTokenizer
-from flowtcr_fold.Immuno_PLM.immuno_plm import ImmunoPLM, compute_batch_infonce
+from flowtcr_fold.Immuno_PLM.immuno_plm import ImmunoPLM, compute_batch_infonce, compute_infonce_with_negatives
 from flowtcr_fold.common.utils import save_checkpoint, EarlyStopper
 
 
@@ -91,33 +91,69 @@ def parse_args():
     return p.parse_args()
 
 
-def collate_fn(batch: List[Dict]) -> Dict[str, torch.Tensor]:
+def make_collate_fn(gene_vocab: Dict[str, Dict[str, int]]):
     """
-    Collate batch with padding.
-    
-    For Batch InfoNCE, we only need positive samples (no explicit negatives).
+    Build collate_fn with gene vocab mapping string -> id for h_v/h_j/l_v/l_j.
     """
-    tokens_list = [item["tokens_pos"] for item in batch]
-    masks_list = [item["mask_pos"] for item in batch]
-    slices_list = [item["slices_pos"] for item in batch]
-    
-    # Pad tokens
-    max_len = max(t.size(0) for t in tokens_list)
-    B = len(tokens_list)
-    
-    tokens_padded = torch.zeros(B, max_len, dtype=torch.long)
-    mask_padded = torch.zeros(B, max_len, dtype=torch.long)
-    
-    for i, (t, m) in enumerate(zip(tokens_list, masks_list)):
-        tokens_padded[i, :t.size(0)] = t
-        mask_padded[i, :m.size(0)] = m
-    
-    return {
-        "tokens": tokens_padded,
-        "mask": mask_padded,
-        "slices": slices_list,
-        "meta": [item.get("meta", {}) for item in batch]
-    }
+
+    def to_gene_ids(meta_list: List[Dict[str, str]]) -> Dict[str, torch.Tensor]:
+        out = {}
+        for key in ["h_v", "h_j", "l_v", "l_j"]:
+            ids = []
+            for meta in meta_list:
+                val = meta.get(key)
+                ids.append(gene_vocab.get(key, {}).get(val, 0) if val else 0)
+            out[key] = torch.tensor(ids, dtype=torch.long)
+        return out
+
+    def collate_fn(batch: List[Dict]) -> Dict[str, torch.Tensor]:
+        tokens_list = [item["tokens_pos"] for item in batch]
+        masks_list = [item["mask_pos"] for item in batch]
+        slices_list = [item["slices_pos"] for item in batch]
+        meta_list = [item.get("meta", {}) for item in batch]
+
+        max_len = max(t.size(0) for t in tokens_list)
+        B = len(tokens_list)
+
+        tokens_padded = torch.zeros(B, max_len, dtype=torch.long)
+        mask_padded = torch.zeros(B, max_len, dtype=torch.long)
+
+        for i, (t, m) in enumerate(zip(tokens_list, masks_list)):
+            tokens_padded[i, : t.size(0)] = t
+            mask_padded[i, : m.size(0)] = m
+
+        # negatives (optional)
+        neg_tokens_list = [item["tokens_neg"] for item in batch if item["tokens_neg"] is not None]
+        tokens_neg = None
+        mask_neg = None
+        slices_neg = None
+        if neg_tokens_list:
+            max_len_neg = max(t.size(0) for t in neg_tokens_list)
+            tokens_neg = torch.zeros(B, max_len_neg, dtype=torch.long)
+            mask_neg = torch.zeros(B, max_len_neg, dtype=torch.long)
+            slices_neg = [None] * B
+            for i, item in enumerate(batch):
+                tneg = item["tokens_neg"]
+                if tneg is None:
+                    continue
+                tokens_neg[i, : tneg.size(0)] = tneg
+                mask_neg[i, : item["mask_neg"].size(0)] = item["mask_neg"]
+                slices_neg[i] = item["slices_neg"]
+
+        gene_ids = to_gene_ids(meta_list)
+
+        return {
+            "tokens": tokens_padded,
+            "mask": mask_padded,
+            "slices": slices_list,
+            "tokens_neg": tokens_neg,
+            "mask_neg": mask_neg,
+            "slices_neg": slices_neg,
+            "gene_ids": gene_ids,
+            "meta": meta_list,
+        }
+
+    return collate_fn
 
 
 def compute_mlm_loss(
@@ -187,20 +223,51 @@ def train_epoch(
         tokens = batch["tokens"].to(device)
         mask = batch["mask"].to(device)
         slices = batch["slices"]
+        gene_ids = {k: v.to(device) for k, v in batch["gene_ids"].items()}
         
         # Forward pass
-        out = model(tokens, mask, region_slices=slices)
+        out = model(tokens, mask, region_slices=slices, gene_ids=gene_ids)
         
         # ==============================
         # Batch InfoNCE Loss
         # ==============================
         # Use contrastive embeddings for InfoNCE
-        embeddings = out["contrastive"]  # [B, hidden_dim]
-        
-        # Batch InfoNCE: each sample is its own anchor,
-        # and other samples in batch are negatives
-        # We compute similarity matrix and use diagonal as positive
-        loss_nce = compute_batch_infonce(embeddings, embeddings, temperature=args.tau)
+        def pool_region(rep: torch.Tensor, region: Optional[slice]) -> torch.Tensor:
+            if region is None:
+                return rep.mean(dim=1)
+            return rep[:, region, :].mean(dim=1)
+
+        tcr_emb = torch.stack([pool_region(out["s"][i : i + 1], s.get("cdr3b"))[0] for i, s in enumerate(slices)])
+        pmhc_emb = torch.stack(
+            [
+                pool_region(out["s"][i : i + 1], s.get("pep")).squeeze(0)
+                + pool_region(out["s"][i : i + 1], s.get("mhc")).squeeze(0)
+                for i, s in enumerate(slices)
+            ]
+        )
+        loss_nce = compute_batch_infonce(tcr_emb, pmhc_emb, temperature=args.tau)
+
+        # Explicit negatives (if provided)
+        loss_neg = torch.tensor(0.0, device=device)
+        if batch["tokens_neg"] is not None:
+            t_neg = batch["tokens_neg"].to(device)
+            m_neg = batch["mask_neg"].to(device)
+            s_neg = batch["slices_neg"]
+            # filter rows that actually have negatives
+            valid_idx = [i for i, s in enumerate(s_neg) if s is not None]
+            if valid_idx:
+                t_neg = t_neg[valid_idx]
+                m_neg = m_neg[valid_idx]
+                s_neg_valid = [s_neg[i] for i in valid_idx]
+                out_neg = model(t_neg, m_neg, region_slices=s_neg_valid, gene_ids=gene_ids)
+                pmhc_neg = torch.stack(
+                    [
+                        pool_region(out_neg["s"][i : i + 1], s.get("pep")).squeeze(0)
+                        + pool_region(out_neg["s"][i : i + 1], s.get("mhc")).squeeze(0)
+                        for i, s in enumerate(s_neg_valid)
+                    ]
+                )
+                loss_neg = compute_infonce_with_negatives(tcr_emb, pmhc_emb, negatives=pmhc_neg, temperature=args.tau)
         
         # ==============================
         # MLM Loss (optional)
@@ -212,7 +279,7 @@ def train_epoch(
         # ==============================
         # Total Loss
         # ==============================
-        loss = loss_nce + args.mlm_weight * loss_mlm
+        loss = loss_nce + loss_neg + args.mlm_weight * loss_mlm
         
         # Backward pass
         optimizer.zero_grad()
@@ -287,14 +354,25 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
     
-    # Dataset
+    # Dataset + gene vocab
     print("\nLoading dataset...")
     train_ds = FlowDataset(args.data, split="train")
+    gene_vocab: Dict[str, Dict[str, int]] = {"h_v": {}, "h_j": {}, "l_v": {}, "l_j": {}}
+    for s in train_ds.samples:
+        if s.h_v and s.h_v not in gene_vocab["h_v"]:
+            gene_vocab["h_v"][s.h_v] = len(gene_vocab["h_v"]) + 1
+        if s.h_j and s.h_j not in gene_vocab["h_j"]:
+            gene_vocab["h_j"][s.h_j] = len(gene_vocab["h_j"]) + 1
+        if s.l_v and s.l_v not in gene_vocab["l_v"]:
+            gene_vocab["l_v"][s.l_v] = len(gene_vocab["l_v"]) + 1
+        if s.l_j and s.l_j not in gene_vocab["l_j"]:
+            gene_vocab["l_j"][s.l_j] = len(gene_vocab["l_j"]) + 1
+
     train_loader = DataLoader(
         train_ds,
         batch_size=args.batch_size,
         shuffle=True,
-        collate_fn=collate_fn,
+        collate_fn=make_collate_fn(gene_vocab),
         num_workers=0
     )
     print(f"Training samples: {len(train_ds)}")
@@ -306,7 +384,7 @@ def main():
             val_ds,
             batch_size=args.batch_size,
             shuffle=False,
-            collate_fn=collate_fn
+            collate_fn=make_collate_fn(gene_vocab)
         )
         print(f"Validation samples: {len(val_ds)}")
     

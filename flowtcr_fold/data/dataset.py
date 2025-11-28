@@ -18,14 +18,28 @@ from torch.utils.data import Dataset
 
 from .tokenizer import get_tokenizer, BasicTokenizer
 
+AA_SET = set("ACDEFGHIKLMNPQRSTVWY")
+
+def _looks_like_seq(val: str, min_len: int = 8) -> bool:
+    return len(val) >= min_len and all(c in AA_SET for c in val)
 
 @dataclass
 class Sample:
     peptide: str
     mhc: str
     cdr3b: str
-    v_gene: Optional[str] = None
-    j_gene: Optional[str] = None
+    h_v: Optional[str] = None  # beta V (or heavy) raw field (may be name or seq)
+    h_j: Optional[str] = None  # beta J (or heavy)
+    l_v: Optional[str] = None  # alpha V (or light)
+    l_j: Optional[str] = None  # alpha J (or light)
+    h_v_name: Optional[str] = None
+    h_j_name: Optional[str] = None
+    l_v_name: Optional[str] = None
+    l_j_name: Optional[str] = None
+    h_v_seq: Optional[str] = None
+    h_j_seq: Optional[str] = None
+    l_v_seq: Optional[str] = None
+    l_j_seq: Optional[str] = None
 
 
 class FlowDataset(Dataset):
@@ -65,8 +79,18 @@ class FlowDataset(Dataset):
                             peptide=row.get("peptide", ""),
                             mhc=row.get("mhc", ""),
                             cdr3b=row.get("cdr3_b", "") or row.get("cdr3", ""),
-                            v_gene=row.get("h_v") or row.get("v_gene"),
-                            j_gene=row.get("h_j") or row.get("j_gene"),
+                            h_v=row.get("h_v"),
+                            h_j=row.get("h_j"),
+                            l_v=row.get("l_v"),
+                            l_j=row.get("l_j"),
+                            h_v_name=row.get("h_v_name"),
+                            h_j_name=row.get("h_j_name"),
+                            l_v_name=row.get("l_v_name"),
+                            l_j_name=row.get("l_j_name"),
+                            h_v_seq=row.get("h_v_seq"),
+                            h_j_seq=row.get("h_j_seq"),
+                            l_v_seq=row.get("l_v_seq"),
+                            l_j_seq=row.get("l_j_seq"),
                         )
                     )
         else:
@@ -78,14 +102,35 @@ class FlowDataset(Dataset):
                             peptide=obj.get("peptide", ""),
                             mhc=obj.get("mhc", ""),
                             cdr3b=obj.get("cdr3b", obj.get("cdr3", "")),
-                            v_gene=obj.get("h_v"),
-                            j_gene=obj.get("h_j"),
+                            h_v=obj.get("h_v"),
+                            h_j=obj.get("h_j"),
+                            l_v=obj.get("l_v"),
+                            l_j=obj.get("l_j"),
+                            h_v_name=obj.get("h_v_name"),
+                            h_j_name=obj.get("h_j_name"),
+                            l_v_name=obj.get("l_v_name"),
+                            l_j_name=obj.get("l_j_name"),
+                            h_v_seq=obj.get("h_v_seq"),
+                            h_j_seq=obj.get("h_j_seq"),
+                            l_v_seq=obj.get("l_v_seq"),
+                            l_j_seq=obj.get("l_j_seq"),
                         )
                     )
         return [s for s in samples if s.peptide and s.mhc and s.cdr3b]
 
     def __len__(self):
         return len(self.samples)
+
+    @staticmethod
+    def _resolve_name(raw: Optional[str], seq: Optional[str], mapped_name: Optional[str]) -> str:
+        """
+        Prefer mapped_name if provided; else if raw looks like a name (short or contains '*'), use raw; else empty.
+        """
+        if mapped_name and str(mapped_name).strip():
+            return str(mapped_name).strip()
+        if raw and (len(raw) <= 20 or "*" in raw):
+            return str(raw).strip()
+        return ""
 
     def _build_tokens(self, sample: Sample) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, slice]]:
         """
@@ -210,8 +255,14 @@ class FlowDataset(Dataset):
                 "peptide": pos.peptide,
                 "mhc": pos.mhc,
                 "cdr3b": pos.cdr3b,
-                "v_gene": pos.v_gene,
-                "j_gene": pos.j_gene,
+                "h_v": self._resolve_name(pos.h_v, pos.h_v_seq, pos.h_v_name),
+                "h_j": self._resolve_name(pos.h_j, pos.h_j_seq, pos.h_j_name),
+                "l_v": self._resolve_name(pos.l_v, pos.l_v_seq, pos.l_v_name),
+                "l_j": self._resolve_name(pos.l_j, pos.l_j_seq, pos.l_j_name),
+                "h_v_seq": pos.h_v_seq if pos.h_v_seq else (pos.h_v if pos.h_v and _looks_like_seq(pos.h_v) else ""),
+                "h_j_seq": pos.h_j_seq if pos.h_j_seq else (pos.h_j if pos.h_j and _looks_like_seq(pos.h_j) else ""),
+                "l_v_seq": pos.l_v_seq if pos.l_v_seq else (pos.l_v if pos.l_v and _looks_like_seq(pos.l_v) else ""),
+                "l_j_seq": pos.l_j_seq if pos.l_j_seq else (pos.l_j if pos.l_j and _looks_like_seq(pos.l_j) else ""),
                 "neg_type": neg_type,
             },
         }
