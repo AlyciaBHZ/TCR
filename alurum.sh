@@ -27,3 +27,5 @@ zgpuA403
 nvm use node
 npm install -g @anthropic-ai/claude-code
 npm i -g @openai/codex
+
+git pull origin main
