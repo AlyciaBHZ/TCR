@@ -20,13 +20,6 @@ except Exception:
     esm = None  # type: ignore
     ESM_AVAILABLE = False
 
-# Optional PEFT/LoRA
-try:
-    from peft import LoraConfig, get_peft_model  # type: ignore
-    PEFT_AVAILABLE = True
-except Exception:
-    PEFT_AVAILABLE = False
-
 # Minimal in-house LoRA wrapper (used if PEFT is unavailable)
 class LoRALinear(nn.Module):
     """
@@ -163,7 +156,8 @@ class ImmunoPLM(nn.Module):
         self.hidden_dim = hidden_dim
         self.z_dim = z_dim
         self.use_esm = use_esm and ESM_AVAILABLE
-        self.use_lora = use_lora and PEFT_AVAILABLE and self.use_esm
+        self.use_lora = use_lora and self.use_esm
+        self.use_peft = use_peft and PEFT_AVAILABLE and self.use_lora
 
         # Backbone
         if self.use_esm:
@@ -179,17 +173,11 @@ class ImmunoPLM(nn.Module):
             self.embed_dim = self.esm_model.embed_dim
             # LoRA
             if self.use_lora:
-                if PEFT_AVAILABLE:
-                    peft_config = LoraConfig(
-                        r=lora_rank,
-                        lora_alpha=lora_alpha,
-                        lora_dropout=lora_dropout,
-                        target_modules=["q_proj", "k_proj", "v_proj", "out_proj"],
-                        bias="none",
-                    )
-                    self.esm_model = get_peft_model(self.esm_model, peft_config)
-                else:
-                    inject_lora_linear(self.esm_model, rank=lora_rank, alpha=lora_alpha, dropout=lora_dropout)
+                inject_lora_linear(self.esm_model, rank=lora_rank, alpha=lora_alpha, dropout=lora_dropout)
+                # report trainable params
+                t_params = sum(p.numel() for p in self.esm_model.parameters() if p.requires_grad)
+                a_params = sum(p.numel() for p in self.esm_model.parameters())
+                print(f"LoRA injected. Trainable params: {t_params} / {a_params} ({t_params / a_params:.2%})")
             # Freeze base weights when not using LoRA
             if not self.use_lora:
                 for p in self.esm_model.parameters():

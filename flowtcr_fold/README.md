@@ -210,7 +210,7 @@ To avoid "false negative" issues in InfoNCE training:
 
 **Role**: Encode TCR and pMHC sequences into embeddings for retrieval and conditioning.
 
-**Core Design**: Topology bias + V/J conditioning. Current code supports BasicTokenizer and optional frozen ESM features; LoRA fine-tuning is planned but not yet implemented.
+**Core Design**: Topology bias + V/J conditioning. Current code supports BasicTokenizer and optional ESM with in-house LoRA (no  dependency).
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -623,7 +623,7 @@ pip install torch transformers biopython pandas numpy
 pip install fair-esm
 
 # Install PEFT for LoRA (required for ESM-2 fine-tuning)
-pip install peft
+pip install 
 
 # (Optional) Install wandb for experiment tracking
 pip install wandb
@@ -660,7 +660,7 @@ mkdir -p data/pdb_structures
 ### 9.3 Training
 
 ```bash
-# Step 1: Train Immuno-PLM with ESM-2 + LoRA (design target; requires PEFT and ESM)
+# Step 1: Train Immuno-PLM with ESM-2 + LoRA (design target; uses in-house LoRA if no )
 python flowtcr_fold/Immuno_PLM/train_plm.py     --data data/trn.csv     --use_esm --use_lora     --esm_model esm2_t33_650M_UR50D     --lora_rank 8     --batch_size 32     --epochs 100     --out_dir checkpoints/plm
 
 # Step 1 (implemented subset): BasicTokenizer or frozen ESM features
