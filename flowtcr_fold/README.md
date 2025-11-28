@@ -206,11 +206,11 @@ To avoid "false negative" issues in InfoNCE training:
 
 ## 4. Module Architecture
 
-### 4.1 Immuno-PLM (ESM-2 + LoRA + Topology Bias)
+### 4.1 Immuno-PLM (ESM-2 + Topology Bias) — Status: **partial**
 
 **Role**: Encode TCR and pMHC sequences into embeddings for retrieval and conditioning.
 
-**Core Design**: We do not freeze ESM-2. Instead, we use **LoRA (Low-Rank Adaptation)** to fine-tune it for TCR-pMHC specificity learning.
+**Core Design**: Topology bias + V/J conditioning. Current code supports BasicTokenizer and optional frozen ESM features; LoRA fine-tuning is planned but not yet implemented.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -253,46 +253,14 @@ To avoid "false negative" issues in InfoNCE training:
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-**LoRA Configuration**:
-```python
-from peft import LoraConfig, get_peft_model
+_LoRA adapters are part of the design but are not implemented in the current codebase; current backbone is BasicTokenizer or frozen ESM features._
 
-lora_config = LoraConfig(
-    r=8,                      # Rank (trainable params ∝ r)
-    lora_alpha=32,            # Scaling factor
-    lora_dropout=0.1,
-    target_modules=[          # Apply to all attention projections
-        "self_attn.q_proj",
-        "self_attn.k_proj",
-        "self_attn.v_proj",
-        "self_attn.out_proj"
-    ],
-    bias="none"
-)
-
-# Result: ~0.36% trainable parameters (2.4M / 650M)
-```
-
-**LoRA Advantages**:
-
-| Comparison | Frozen ESM | Full Fine-tune | ESM + LoRA |
-|------------|-----------|----------------|------------|
-| **Trainable Params** | 0 | 650M | ~2.4M (0.36%) |
-| **VRAM Usage** | Low | Very High (>40GB) | Low (~12GB) |
-| **Training Speed** | Fast | Slow | Fast |
-| **Domain Adaptation** | ❌ None | ✅ Best | ✅ Near-best |
-| **Catastrophic Forgetting** | ❌ None | ⚠️ Risk | ✅ Safe |
-
-**Training**:
-```bash
-python flowtcr_fold/Immuno_PLM/train_plm.py \
-    --data data/trn.csv \
-    --use_esm --use_lora \
-    --lora_rank 8 \
-    --esm_model esm2_t33_650M_UR50D \
-    --batch_size 32 \
-    --epochs 100
-```
+**Training (implemented subset)**:
+`ash
+python flowtcr_fold/Immuno_PLM/train_plm.py --data data/trn.csv --batch_size 32 --epochs 100
+# Optional (frozen ESM features if installed):
+python flowtcr_fold/Immuno_PLM/train_plm.py --data data/trn.csv --use_esm --esm_model esm2_t6_8M_UR50D
+`
 
 **Loss**: Batch InfoNCE (safe from false negatives)
 
@@ -692,21 +660,15 @@ mkdir -p data/pdb_structures
 ### 9.3 Training
 
 ```bash
-# Step 1: Train Immuno-PLM with ESM-2 + LoRA (RECOMMENDED)
-python flowtcr_fold/Immuno_PLM/train_plm.py \
-    --data data/trn.csv \
-    --use_esm --use_lora \
-    --esm_model esm2_t33_650M_UR50D \
-    --lora_rank 8 \
-    --batch_size 32 \
-    --epochs 100 \
-    --out_dir checkpoints/plm
+# Step 1: Train Immuno-PLM with ESM-2 + LoRA (design target; requires PEFT and ESM)
+python flowtcr_fold/Immuno_PLM/train_plm.py     --data data/trn.csv     --use_esm --use_lora     --esm_model esm2_t33_650M_UR50D     --lora_rank 8     --batch_size 32     --epochs 100     --out_dir checkpoints/plm
 
-# Alternative: BasicTokenizer mode (for quick testing)
-python flowtcr_fold/Immuno_PLM/train_plm.py \
-    --data data/trn.csv \
-    --batch_size 64 \
-    --epochs 100
+# Step 1 (implemented subset): BasicTokenizer or frozen ESM features
+python flowtcr_fold/Immuno_PLM/train_plm.py     --data data/trn.csv     --batch_size 32     --epochs 100     --out_dir checkpoints/plm
+
+# Optional: use frozen ESM features if installed
+python flowtcr_fold/Immuno_PLM/train_plm.py     --data data/trn.csv     --use_esm     --esm_model esm2_t6_8M_UR50D     --batch_size 32     --epochs 100     --out_dir checkpoints/plm
+
 
 # Step 2: Train FlowTCR-Gen
 python flowtcr_fold/FlowTCR_Gen/train_flow.py \
