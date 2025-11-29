@@ -2,7 +2,7 @@
 Immuno-PLM: Hybrid encoder with topology bias, V/J conditioning, and optional ESM + LoRA.
 - Topology bias (psi_model style): collapse token + hierarchical pairs.
 - V/J conditioning: h_v, h_j, l_v, l_j embeddings fused into CLS.
-- Backbones: BasicTokenizer embedding, or ESM feature extractor; LoRA adapters optional when PEFT is installed.
+- Backbones: BasicTokenizer embedding, or ESM feature extractor; LoRA adapters optional (built-in implementation).
 - Training targets: InfoNCE (batch negatives) + optional MLM (handled in training script).
 """
 from typing import Dict, Optional, List, Tuple
@@ -20,7 +20,7 @@ except Exception:
     esm = None  # type: ignore
     ESM_AVAILABLE = False
 
-# Minimal in-house LoRA wrapper (used if PEFT is unavailable)
+# Built-in LoRA implementation (no external PEFT dependency)
 class LoRALinear(nn.Module):
     """
     Lightweight LoRA for Linear layers: frozen base + trainable low-rank update.
@@ -157,7 +157,6 @@ class ImmunoPLM(nn.Module):
         self.z_dim = z_dim
         self.use_esm = use_esm and ESM_AVAILABLE
         self.use_lora = use_lora and self.use_esm
-        self.use_peft = use_peft and PEFT_AVAILABLE and self.use_lora
 
         # Backbone
         if self.use_esm:
