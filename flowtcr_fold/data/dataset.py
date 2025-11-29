@@ -188,7 +188,7 @@ class FlowDataset(Dataset):
             ]
             if candidates:
                 pick = random.choice(candidates)
-                return Sample(peptide=pick.peptide, mhc=anchor.mhc, cdr3b=anchor.cdr3b, v_gene=anchor.v_gene, j_gene=anchor.j_gene), "decoy_peptide"
+                return Sample(peptide=pick.peptide, mhc=anchor.mhc, cdr3b=anchor.cdr3b, h_v=anchor.h_v, h_j=anchor.h_j, l_v=anchor.l_v, l_j=anchor.l_j), "decoy_peptide"
         # Type B: swap CDR3 within same MHC
         candidates = [self.samples[i] for i in self.by_mhc.get(anchor.mhc, []) if self.samples[i].cdr3b != anchor.cdr3b]
         if candidates:
@@ -199,13 +199,13 @@ class FlowDataset(Dataset):
                 neg_type = "mutant_cdr3"
             else:
                 neg_type = "swap_cdr3"
-            return Sample(peptide=anchor.peptide, mhc=anchor.mhc, cdr3b=cdr3, v_gene=anchor.v_gene, j_gene=anchor.j_gene), neg_type
+            return Sample(peptide=anchor.peptide, mhc=anchor.mhc, cdr3b=cdr3, h_v=anchor.h_v, h_j=anchor.h_j, l_v=anchor.l_v, l_j=anchor.l_j), neg_type
         # fallback: random shuffle
         neg_idx = anchor_idx
         while neg_idx == anchor_idx:
             neg_idx = random.randrange(len(self.samples))
         pick = self.samples[neg_idx]
-        return Sample(peptide=pick.peptide, mhc=pick.mhc, cdr3b=anchor.cdr3b, v_gene=anchor.v_gene, j_gene=anchor.j_gene), "random"
+        return Sample(peptide=pick.peptide, mhc=pick.mhc, cdr3b=anchor.cdr3b, h_v=anchor.h_v, h_j=anchor.h_j, l_v=anchor.l_v, l_j=anchor.l_j), "random"
 
     @staticmethod
     def _seq_identity(a: str, b: str) -> float:

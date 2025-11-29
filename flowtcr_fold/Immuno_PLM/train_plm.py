@@ -1,5 +1,17 @@
 """
-Training Entrypoint for Immuno-PLM (ESM-2 + LoRA + Topology Bias)
+⚠️ DEPRECATED: This file has known bugs and is replaced by train_scaffold_retrieval.py
+
+Known issues:
+1. Line 262: gene_ids not sliced when filtering valid_idx → size mismatch crash
+2. Line 332: evaluate() uses self-contrastive loss → always 0, early stopping invalid
+3. Only single InfoNCE (CDR3 vs pMHC), not 4-way as designed
+
+Use train_scaffold_retrieval.py instead:
+    python -m flowtcr_fold.Immuno_PLM.train_scaffold_retrieval --data ...
+
+---
+
+[DEPRECATED] Training Entrypoint for Immuno-PLM (ESM-2 + LoRA + Topology Bias)
 
 Supports three training modes:
 1. ESM-2 + LoRA (recommended): Fine-tune ESM with low-rank adapters

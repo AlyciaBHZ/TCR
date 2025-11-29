@@ -206,11 +206,11 @@ To avoid "false negative" issues in InfoNCE training:
 
 ## 4. Module Architecture
 
-### 4.1 Immuno-PLM (ESM-2 + Topology Bias) — Status: **partial**
+### 4.1 Immuno-PLM (Scaffold Retrieval) — Status: **✅ Complete**
 
-**Role**: Encode TCR and pMHC sequences into embeddings for retrieval and conditioning.
+**Role**: Given pMHC, retrieve the best V/J gene scaffolds (HV, HJ, LV, LJ).
 
-**Core Design**: Topology bias + V/J conditioning. Current code supports BasicTokenizer and optional ESM with in-house LoRA (no  dependency).
+**Core Design**: Bi-Encoder with shared ESM-2 backbone + 4 parallel InfoNCE losses + 4 auxiliary classification heads.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -389,28 +389,36 @@ print(f"Unique scaffolds: {len(scaffold_bank)}")
 
 ## 6. Training Workflows
 
-### 6.1 Immuno-PLM Training
+### 6.1 Scaffold Retrieval Training
 
-**Objective**: Learn TCR-pMHC compatibility for scaffold retrieval.
+**Objective**: Learn pMHC → V/J scaffold mapping for retrieval.
 
 ```bash
-python flowtcr_fold/Immuno_PLM/train_plm.py \
-    --data data/trn.csv \
-    --epochs 100 \
-    --batch_size 64 \
-    --lr 1e-4 \
-    --tau 0.07 \
-    --out_dir checkpoints/plm
+# Basic mode (fast debugging)
+python -m flowtcr_fold.Immuno_PLM.train_scaffold_retrieval \
+    --data flowtcr_fold/data/trn.jsonl \
+    --epochs 100 --batch_size 32
+
+# ESM-2 + LoRA mode (production)
+python -m flowtcr_fold.Immuno_PLM.train_scaffold_retrieval \
+    --data flowtcr_fold/data/trn.jsonl \
+    --use_esm --use_lora --lora_rank 8 \
+    --epochs 100 --batch_size 16 \
+    --cls_weight 0.2
 ```
 
-**Loss Function** (Batch InfoNCE):
+**Loss Function** (InfoNCE + Classification):
 
 ```python
-def compute_batch_infonce(tcr_emb, pmhc_emb, temperature=0.07):
-    # tcr_emb: [B, D], pmhc_emb: [B, D]
-    logits = tcr_emb @ pmhc_emb.T / temperature  # [B, B]
-    labels = torch.arange(logits.size(0), device=logits.device)
-    return F.cross_entropy(logits, labels)
+# 4 parallel InfoNCE losses (main)
+loss_nce = InfoNCE(z_pmhc, z_hv) + InfoNCE(z_pmhc, z_hj) + \
+           InfoNCE(z_pmhc, z_lv) + InfoNCE(z_pmhc, z_lj)
+
+# 4 classification losses (auxiliary)
+loss_cls = CrossEntropy(logits_hv, hv_id) + ...
+
+# Total
+loss = loss_nce + 0.2 * loss_cls
 ```
 
 ### 6.2 FlowTCR-Gen Training
@@ -622,8 +630,7 @@ pip install torch transformers biopython pandas numpy
 # Install ESM-2 (required for Immuno-PLM)
 pip install fair-esm
 
-# Install PEFT for LoRA (required for ESM-2 fine-tuning)
-pip install 
+# Note: LoRA uses built-in implementation (no PEFT dependency)
 
 # (Optional) Install wandb for experiment tracking
 pip install wandb
@@ -711,7 +718,7 @@ This project builds upon validated components from previous work:
 | Module | Status | Notes |
 |--------|--------|-------|
 | **Data Infrastructure** | ✅ 90% | Triplet sampler, tokenizer, scaffold bank |
-| **Immuno-PLM** | ✅ 80% | InfoNCE + topology bias working |
+| **Immuno-PLM** | ✅ 100% | Scaffold retrieval with InfoNCE + Classification |
 | **FlowTCR-Gen** | 🔄 40% | Basic flow matching, needs full conditioning |
 | **TCRFold-Light** | ✅ 75% | EvoEF2 integration complete |
 | **Physics Module** | ✅ 90% | EvoEF2 wrapper fully functional |

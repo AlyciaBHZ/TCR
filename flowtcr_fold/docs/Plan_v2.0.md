@@ -219,52 +219,37 @@
 
 #### 3.1.2 LoRA 配置详解
 
-```python
-from peft import get_peft_model, LoraConfig
+> **注意**: 使用内置 LoRA 实现（`immuno_plm.py` 中的 `LoRALinear`），无需 peft 依赖。
 
-class ImmunoPLM(nn.Module):
-    def __init__(
-        self,
-        hidden_dim: int = 256,
-        z_dim: int = 128,
-        use_esm: bool = True,
-        use_lora: bool = True,
-        lora_rank: int = 8,
-        lora_alpha: int = 32,
-        lora_dropout: float = 0.1,
-        esm_model_name: str = "esm2_t33_650M_UR50D"
-    ):
+```python
+# 内置 LoRA 实现 (immuno_plm.py)
+class LoRALinear(nn.Module):
+    """Lightweight LoRA for Linear layers: frozen base + trainable low-rank update."""
+    
+    def __init__(self, base: nn.Linear, rank: int = 8, alpha: int = 32, dropout: float = 0.1):
         super().__init__()
+        self.base = base
+        self.base.weight.requires_grad = False
+        if self.base.bias is not None:
+            self.base.bias.requires_grad = False
         
-        # 1. 加载 ESM-2 (650M 参数，通用蛋白质知识)
-        self.esm_model, self.alphabet = esm.pretrained.esm2_t33_650M_UR50D()
-        self.embed_dim = self.esm_model.embed_dim  # 1280
-        
-        # 2. 注入 LoRA (只训练 ~0.1% 的参数！)
-        if use_lora:
-            peft_config = LoraConfig(
-                inference_mode=False,
-                r=lora_rank,              # 秩 (越低参数越少)
-                lora_alpha=lora_alpha,    # 缩放因子
-                lora_dropout=lora_dropout,
-                target_modules=[          # 目标：所有 Attention 投影
-                    "self_attn.q_proj",   # Query
-                    "self_attn.k_proj",   # Key
-                    "self_attn.v_proj",   # Value
-                    "self_attn.out_proj"  # Output
-                ],
-                bias="none"
-            )
-            self.esm_model = get_peft_model(self.esm_model, peft_config)
-            self.esm_model.print_trainable_parameters()
-            # 输出: trainable params: 2,359,296 || all params: 652,421,888 || 0.36%
-        
-        # 3. 拓扑偏置 (来自 psi_model，保持不变)
-        self.topology_bias = TopologyBias(z_dim=z_dim)
-        
-        # 4. 融合层
-        self.seq_proj = nn.Linear(self.embed_dim, hidden_dim)
-        self.pair_fusion = nn.Linear(z_dim, hidden_dim)
+        self.rank = rank
+        self.scaling = alpha / rank
+        in_dim = base.in_features
+        out_dim = base.out_features
+        self.lora_A = nn.Parameter(torch.zeros(rank, in_dim))
+        self.lora_B = nn.Parameter(torch.zeros(out_dim, rank))
+        self.dropout = nn.Dropout(p=dropout)
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        base_out = self.base(x)
+        lora_out = (self.dropout(x) @ self.lora_A.t() @ self.lora_B.t()) * self.scaling
+        return base_out + lora_out
+
+# 使用方式 (ImmunoPLM.__init__)
+if self.use_lora:
+    inject_lora_linear(self.esm_model, rank=lora_rank, alpha=lora_alpha, dropout=lora_dropout)
+    # 输出: LoRA injected. Trainable params: X / Y (Z%)
         
         # 5. 输出层
         self.dropout = nn.Dropout(0.1)
@@ -304,34 +289,41 @@ Level N+: 条件区域之间
 
 #### 3.1.3 训练目标
 
-**Batch InfoNCE Loss** (安全的对比学习)：
+**确认的 Pipeline (2025-11-29)**：
+
+```
+A. 训练:
+   - 5 次编码 (共享 Encoder): pMHC, HV, HJ, LV, LJ
+   - 4 个 InfoNCE loss (主): pMHC ↔ HV/HJ/LV/LJ
+   - 4 个 Classification loss (辅): 预测 Gene Name
+
+B. 建库 (训练后执行一次):
+   - 收集所有唯一的 V/J 序列
+   - 编码后存入 Bank (HV ~65, HJ ~14, LV ~45, LJ ~61)
+
+C. 推理:
+   - query = Encoder(pMHC)
+   - score = query @ Bank.T → argmax → 最佳 V/J 序列
+```
+
+**Loss Function**:
 
 ```python
-def compute_batch_infonce(tcr_emb, pmhc_emb, temperature=0.07):
-    """
-    tcr_emb: [B, D] - TCR 嵌入
-    pmhc_emb: [B, D] - pMHC 嵌入
-    
-    关键：不从数据库采样负样本，使用 Batch 内随机负样本
-    这样避免了误杀潜在的真实 binder
-    """
-    # 相似度矩阵
-    logits = tcr_emb @ pmhc_emb.T / temperature  # [B, B]
-    
-    # 对角线是正样本
-    labels = torch.arange(logits.size(0), device=logits.device)
-    
-    # Cross Entropy: 对于 TCR_i，只有 pMHC_i 是正样本
-    # Batch 中其他 pMHC_j (j≠i) 自动成为负样本
-    loss = F.cross_entropy(logits, labels)
-    
-    return loss
+# 4 并行 InfoNCE (主 loss)
+loss_nce = InfoNCE(z_pmhc, z_hv) + InfoNCE(z_pmhc, z_hj) + \
+           InfoNCE(z_pmhc, z_lv) + InfoNCE(z_pmhc, z_lj)
+
+# 4 分类 loss (辅助)
+loss_cls = CrossEntropy(logits_hv, hv_id) + ...
+
+# 总 loss
+loss = loss_nce + 0.2 * loss_cls
 ```
 
 **为什么 Batch Random 是安全的？**
-- Batch 内的其他样本是**真正不同的** pMHC-TCR 配对
+- Batch 内的其他样本是**真正不同的** pMHC-V/J 配对
 - 不需要显式采样"负样本"，避免误标记
-- 只要 Batch Size 够大（64+），效果就很好
+- 只要 Batch Size 够大（32+），效果就很好
 
 ### 3.2 FlowTCR-Gen (流匹配生成器)
 
@@ -578,20 +570,27 @@ print(f"唯一骨架数: {len(scaffold_bank)}")
 #### 5.1.2 命令
 
 ```bash
-python flowtcr_fold/Immuno_PLM/train_plm.py \
-    --data data/trn.csv \
-    --epochs 100 \
-    --batch_size 64 \
-    --lr 1e-4 \
-    --tau 0.07 \
-    --out_dir checkpoints/plm
+# 基础模式 (快速调试)
+python -m flowtcr_fold.Immuno_PLM.train_scaffold_retrieval \
+    --data flowtcr_fold/data/trn.jsonl \
+    --epochs 100 --batch_size 32
+
+# ESM-2 + LoRA 模式 (生产环境)
+python -m flowtcr_fold.Immuno_PLM.train_scaffold_retrieval \
+    --data flowtcr_fold/data/trn.jsonl \
+    --use_esm --use_lora --lora_rank 8 \
+    --epochs 100 --batch_size 16 \
+    --cls_weight 0.2
 ```
 
 #### 5.1.3 训练要点
 
-- **Batch Size**: 尽量大（64+），提供足够的负样本
-- **Temperature (tau)**: 0.05-0.1，控制对比学习的锐度
-- **Dropout**: 0.1，SimCSE 风格（正样本 = 同一输入不同 dropout）
+- **双塔架构**: pMHC 和 V/J 序列分开编码，共享 Encoder
+- **4 并行 InfoNCE**: pMHC ↔ HV, pMHC ↔ HJ, pMHC ↔ LV, pMHC ↔ LJ
+- **辅助分类 Loss**: 预测 Gene Name，加速收敛
+- **Batch Size**: 尽量大（32+），提供足够的 batch 内负样本
+- **Temperature (tau)**: 0.07，控制对比学习的锐度
+- **Classification Weight**: 0.2，辅助监督信号
 
 #### 5.1.4 验证指标
 
@@ -822,13 +821,14 @@ for i, design in enumerate(designs[:5]):
 
 ## 7. 实施路线图
 
-### 7.1 Phase 1: Immuno-PLM 验证 (Week 1-2)
+### 7.1 Phase 1: Scaffold Retrieval 验证 (Week 1-2)
 
 | 任务 | 状态 | 优先级 |
 |------|------|--------|
-| 运行 smoke test | ⬜ 待做 | 🔴 P0 |
-| 验证 Batch InfoNCE 收敛 | ⬜ 待做 | 🔴 P0 |
-| 构建 Scaffold Bank | ⬜ 待做 | 🔴 P0 |
+| 实现 train_scaffold_retrieval.py | ✅ 完成 | 🔴 P0 |
+| 4 并行 InfoNCE + Classification | ✅ 完成 | 🔴 P0 |
+| 构建 Scaffold Bank (build_bank) | ✅ 完成 | 🔴 P0 |
+| 实现检索逻辑 (retrieve) | ✅ 完成 | 🔴 P0 |
 | 评估 Recall@10 | ⬜ 待做 | 🔴 P0 |
 
 **里程碑**: Recall@10 > 50%
@@ -920,13 +920,16 @@ for i, design in enumerate(designs[:5]):
 # 数据准备
 python flowtcr_fold/data/convert_csv_to_jsonl.py --input data/trn.csv --output data/trn.jsonl
 
-# Immuno-PLM 训练
-python flowtcr_fold/Immuno_PLM/train_plm.py --data data/trn.csv --epochs 100 --batch_size 64
+# Scaffold Retrieval 训练 (Step 1)
+python -m flowtcr_fold.Immuno_PLM.train_scaffold_retrieval \
+    --data flowtcr_fold/data/trn.jsonl \
+    --use_esm --use_lora --lora_rank 8 \
+    --epochs 100 --batch_size 16
 
-# FlowTCR-Gen 训练
+# FlowTCR-Gen 训练 (Step 2)
 python flowtcr_fold/FlowTCR_Gen/train_flow.py --data data/trn.csv --epochs 100
 
-# TCRFold-Light 训练
+# TCRFold-Light 训练 (Step 3, Optional)
 python flowtcr_fold/TCRFold_Light/train_with_energy.py --pdb_dir data/pdb_structures
 
 # 推理
