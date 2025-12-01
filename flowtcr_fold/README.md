@@ -1,6 +1,6 @@
 # FlowTCR-Fold: Physics-Grounded Generative TCR Design
 
-> **Two-Stage TCR Design Framework**: Scaffold Retrieval + CDR3β Generation with Flow Matching, Topology Priors, and Physics Guidance.
+> **Three-Stage TCR Design Framework**: Scaffold Retrieval → Topology-Aware CDR3β Generation → Physics-Grounded Validation
 
 ---
 
@@ -9,14 +9,16 @@
 1. [Project Overview](#1-project-overview)
 2. [Core Design Philosophy](#2-core-design-philosophy)
 3. [Two-Stage Design Strategy](#3-two-stage-design-strategy)
-4. [Module Architecture](#4-module-architecture)
-5. [Data Infrastructure](#5-data-infrastructure)
-6. [Training Workflows](#6-training-workflows)
-7. [Inference Pipeline](#7-inference-pipeline)
-8. [Code Layout](#8-code-layout)
-9. [Quickstart Guide](#9-quickstart-guide)
-10. [Legacy Code References](#10-legacy-code-references)
-11. [Status & Roadmap](#11-status--roadmap)
+4. [Core Methodology Claims](#core-methodology-claims-论文定位) ⬅️ **Paper Positioning**
+5. [Master Plan v3.1](#master-plan-v31-flowtcr-fold-execution-frame)
+6. [Module Architecture](#4-module-architecture)
+7. [Data Infrastructure](#5-data-infrastructure)
+8. [Training Workflows](#6-training-workflows)
+9. [Inference Pipeline](#7-inference-pipeline)
+10. [Code Layout](#8-code-layout)
+11. [Quickstart Guide](#9-quickstart-guide)
+12. [Legacy Code References](#10-legacy-code-references)
+13. [Status & Roadmap](#11-status--roadmap)
 
 ---
 
@@ -63,9 +65,9 @@ A **Retrieve & Generate** framework that decomposes the problem into two tractab
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  Stage 3: STRUCTURE CRITIQUE (Optional)                         │
-│  ─────────────────────────────────────                          │
-│  TCRFold-Light + EvoEF2 filter and rank candidates             │
+│  Stage 3: PHYSICS VALIDATION                                    │
+│  ───────────────────────────                                    │
+│  TCRFold-Prophet (S_ψ) + Energy Surrogate (E_φ) + MC Refinement │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -172,160 +174,369 @@ To avoid "false negative" issues in InfoNCE training:
 └──────────────────────────────────────────────────────────────┘
 ```
 
-### 3.3 Stage 3: Structure Critique (Optional)
+### 3.3 Stage 3: Physics Validation (Required)
 
-**Objective**: Filter structurally implausible candidates.
+**Objective**: Validate structural plausibility and energetic feasibility of generated TCRs.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│                   STRUCTURE CRITIQUE                         │
+│                   PHYSICS VALIDATION                         │
 ├──────────────────────────────────────────────────────────────┤
 │                                                              │
-│  Input:  CDR3β candidates + Scaffold                         │
+│  Input:  CDR3β candidates + Scaffold + pMHC                  │
 │                                                              │
-│  Model:  TCRFold-Light (MSA-free Evoformer)                  │
+│  Model:  TCRFold-Prophet (Evoformer-Single + IPA)            │
 │                                                              │
-│  Outputs:                                                    │
-│    - Contact map prediction                                  │
-│    - pLDDT-like confidence score                             │
-│    - Energy surrogate (trained on EvoEF2 labels)             │
+│  🔴 Must Have:                                               │
+│    - S_ψ: Structure predictor (PPI pretrained)               │
+│    - E_φ: Energy surrogate (EvoEF2-NN)                       │
+│    - Post-hoc screening: Flow → S_ψ → E_φ ranking            │
 │                                                              │
-│  Filtering:                                                  │
-│    - Remove candidates with low interface contact density    │
-│    - Remove candidates with high predicted energy            │
+│  🟡 Should Have:                                             │
+│    - Offline MC refinement with E_φ guidance                 │
 │                                                              │
-│  (Optional) EvoEF2 Refinement:                               │
-│    - Monte Carlo sidechain repacking                         │
-│    - Compute precise binding energy (ΔΔG)                    │
-│    - Final ranking                                           │
+│  🟢 Exploratory:                                             │
+│    - Gradient guidance in Flow ODE                           │
+│    - MC samples for self-play training                       │
 │                                                              │
 └──────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
+## Core Methodology Claims (论文定位)
+
+### Primary Contribution: Topology-Aware Flow Matching for CDR3β Generation
+
+**FlowTCR-Gen** is the central innovation of this work, featuring:
+
+| Component | Description | Innovation |
+|-----------|-------------|------------|
+| **Collapse Token (ψ)** | Learnable global observer that aggregates information across regions | Enables cross-region attention without explicit pairwise enumeration |
+| **Hierarchical Pair Embeddings** | 7-level topology encoding (ψ↔region, intra-region, CDR3↔peptide, CDR3↔MHC, etc.) | Injects TCR-pMHC structural priors into the embedding space |
+| **Dirichlet Flow Matching** | Continuous-time generative model on the amino acid simplex | Supports smooth interpolation and CFG-based conditional control |
+
+**Key Claim**: By combining structural topology priors with discrete flow matching, FlowTCR-Gen generates CDR3β sequences that are both diverse and structurally plausible, outperforming autoregressive and VAE baselines.
+
+### Supporting Contribution: Physics-Grounded Validation
+
+The physics module (TCRFold-Prophet + EvoEF2) serves as **independent validation** rather than the main innovation:
+
+| Purpose | Method | Role in Paper |
+|---------|--------|---------------|
+| Structural plausibility | TCRFold-Prophet (Evoformer-Single + IPA) | Demonstrates generated sequences fold into valid TCR-pMHC structures |
+| Energetic feasibility | E_φ (EvoEF2-NN surrogate) | Shows binding energy distribution matches natural TCRs |
+| Controllable refinement | Monte Carlo with E_φ guidance | Optional post-hoc optimization for best candidates |
+
+**Key Claim**: Generated TCRs are not just statistically similar to training data, but are physically realizable (low clash, favorable binding energy).
+
+---
+
+## Master Plan v3.1 (FlowTCR-Fold Execution Frame)
+
+- Goal: given a target pMHC (peptide + MHC allele), Stage 1 outputs biologically reasonable V/J scaffold priors, Stage 2 generates diverse CDR3β on chosen scaffolds, Stage 3 folds TCR–pMHC and scores with geometry + physics. Stay within this frame for iteration.
+- Practical vs exploratory: Practical = minimal paper-ready loop; Exploratory = optional guidance/decoys that must not block the mainline.
+
+### Stage 1 — Immuno-PLM (Scaffold Prior)
+- Objective: model p(V,J | MHC, peptide) with MHC as strong signal, peptide as weak refinement; CDR3β not fed as input (analysis only).
+- Backbone: `esm2_t33_650M_UR50D` + LoRA (rank 16, alpha 32 on Q/K/V/FFN); prepend an allele embedding token; input `<ALLELE_EMB> MHC_seq Peptide_seq [SEP …]`.
+- Dual supervision:
+  - Multi-positive InfoNCE on sequences: pMHC embedding vs HV/HJ/LV/LJ sequences with two grouping masks (MHC-only main, pMHC auxiliary weight λ_pmhc≈0.3); missing LV/LJ masked out.
+  - Multi-label BCE on gene IDs: group by MHC (primary) and optionally pMHC (secondary weight); pos_weight/focal to handle long tails.
+- Metrics: Top-K recall per group (MHC + pMHC) and KL(p_emp || p_model) vs (1) frequency baseline and (2) MHC-only model.
+
+### Stage 2 — FlowTCR-Gen (CDR3β Generator)
+
+**Objective**: Topology-aware discrete flow generation conditioned on pMHC + scaffold.
+
+**Legacy Reuse**:
+- psi_model Collapse token + hierarchical pair embeddings
+- Evoformer backbone over concatenated sequence
+- Pair IDs explicitly mark CDR3↔peptide and CDR3↔MHC interactions
+
+**Flow Head**:
+- Dirichlet flow matching on CDR3β (x0 = uniform Dirichlet, x1 = one-hot target)
+- Loss = MSE(v_pred, v_true) + λ_ent·collapse-entropy + λ_prof·profile reg
+- CFG supported (p=0.1 drop cond during training; inference weight w)
+- Keep a "model score" hook (flow cost / collapse scalar) for hybrid MC energy
+
+#### Stage 2 Scope Tiers
+
+| Tier | Component | Description | Paper Status |
+|------|-----------|-------------|--------------|
+| **🔴 Must Have** | Dirichlet Flow Matching | 核心生成模块 + MSE loss | Required |
+| **🔴 Must Have** | Collapse + Hierarchical Pairs | 拓扑感知 conditioning encoder | Required (main claim) |
+| **🔴 Must Have** | CFG (Classifier-Free Guidance) | p=0.1 drop, w tunable | Required for controllability |
+| **🟡 Should Have** | Model Score Hook | Export flow cost for hybrid MC | Recommended |
+| **🟢 Exploratory** | Physics Gradient in ODE | `v_θ - w∇E_φ` at sparse steps | Optional, depends on Stage 3 |
+
+### Stage 3 — TCRFold-Prophet (Structure + Energy)
+
+**Architecture**:
+- Trunk: Evoformer-Single + IPA structure head
+- Energy head: E_φ as EvoEF2-NN surrogate
+
+**Data**:
+- A) General PPI (~50k) for trunk/energy pretrain with EvoEF2 labels
+- B) TCR3d/STCRDab for TCR-specific finetune
+
+**Phases**:
+- 3A: trunk + struct head on PPI (FAPE + dist/contact)
+- 3B: energy head (+ last trunk blocks) to fit EvoEF2, with decoy/noisy structures optional
+- 3C: TCR-specific finetune for both heads; target ≥0.7 Pearson/Spearman vs EvoEF2 on TCRs
+
+#### Stage 3 Scope Tiers (论文必需 vs 可选)
+
+| Tier | Component | Description | Paper Status |
+|------|-----------|-------------|--------------|
+| **🔴 Must Have** | S_ψ (Structure Predictor) | General PPI 预训练的折叠网络 | Required for validation |
+| **🔴 Must Have** | E_φ (Energy Surrogate) | 基于 PPI + TCR-pMHC 的 EvoEF2-NN | Required for scoring |
+| **🔴 Must Have** | Post-hoc Screening | Flow → S_ψ → E_φ 的后验筛选与排序 | Required for pipeline |
+| **🟡 Should Have** | Offline MC Refinement | 基于 E_φ 的 Monte Carlo 序列优化 | Strongly recommended |
+| **🟢 Exploratory** | Gradient Guidance in Flow ODE | `x_{t+Δt} = x_t + (v_θ - w∇E_φ)Δt` | Optional, high compute |
+| **🟢 Exploratory** | MC-to-Training Loop | MC 生成样本用于二次训练 (self-play) | Future work |
+
+**Rationale**: The Must Have tier provides independent evidence that generated sequences are physically valid. The Should Have tier (MC refinement) is straightforward to implement given E_φ and significantly improves best-case results. Exploratory items are computationally expensive and should not block the main paper.
+
+### Execution Timeline
+- T1: finalize Stage 1 grouping and loss wiring (dual InfoNCE + BCE); run training with Top-K/KL vs baselines.
+- T2: baseline FlowTCR-Gen with collapse/pair reuse + Dirichlet flow + CFG; validate recon/diversity; log model-score hook.
+- T3: Stage 3 phases: 3A/3B on PPI (structure then energy), then 3C TCR finetune; export E_φ for fast scoring.
+- T4: Integration: Flow samples → TCRFold-Prophet + E_φ screen → MC (E_φ or hybrid) → EvoEF2 final check; later explore guided flow with ∇E_φ.
+
+### Module / Legacy / New-Tech Matrix
+| Stage | Task | Model Backbone | Legacy Usage | New Tech |
+|-------|------|----------------|--------------|----------|
+| 1 | Scaffold sampling (V/J) | ESM-2 650M + LoRA | Avoid heavy Evoformer here | Multi-positive InfoNCE + causal/BCE heads |
+| 2 | CDR3β generation | psi_model Evoformer | ✅ Collapse token + hierarchical pairs | Dirichlet flow head + CFG + grad-guidance hook |
+| 3 | Validation (structure + energy) | TCRFold-Light / Prophet | ✅ Evoformer trunk | EvoEF2-NN surrogate + PDB/TCR3d + MC |
+
+## Pipeline v3.1 Detail (Practical vs Exploratory)
+
+### Stage 1 — Immuno-PLM (Scaffold Prior)
+- Role: scaffold prior; model p(V,J | MHC, peptide). MHC = strong signal, peptide = weak refinement; CDR3β not used as input (analysis only).
+- Inputs: prepend allele embedding token; ESM encodes mhc_sequence+peptide. HV/HJ/LV/LJ sequences feed InfoNCE; HV/HJ/LV/LJ ids feed multi-label BCE. CDR3β only for stats.
+- Dual channels:
+  - Sequence InfoNCE with multi-positive masks: main grouping by MHC, auxiliary by (peptide,MHC) weighted λ_pmhc≈0.3; missing LV/LJ masked; pos_mask precomputed offline.
+  - Multi-label BCE on gene ids: grouped by MHC (primary) + optional pMHC weak weight; pos_weight/focal for long tails; allele cold-start fallback to seq-only/NN.
+- Loss: L = L_NCE_MHC + λ_pmhc·L_NCE_pMHC + λ_bce·L_BCE (λ_bce≈0.2 start). Metrics: Top-K per group, KL(p_emp||p_model) vs frequency & MHC-only baselines. Target R@10 ≈20–40% (v1 ~1%), KL(model) < KL(baseline).
+
+### Stage 2 — FlowTCR-Gen (CDR3β Generator)
+- Input layout: [ψ, CDR3β, peptide, MHC, scaffold]; pair IDs use 7-level hierarchy (psi_model) marking CDR3↔peptide/MHC.
+- Backbone reuse: CollapseAwareEmbedding + SequenceProfileEvoformer (MSA-free) + hierarchical pairs. Long-seq caution: truncate/clip MHC or chunked attention.
+- x_t injection: use `x_proj(x_t) + pos_emb` for CDR3 region (replace one-hot). Evoformer runs on full concatenated sequence.
+- Flow head: Dirichlet flow matching (x0 uniform Dirichlet, x1 one-hot); loss = MSE(v_pred,v_true) + λ_ent·collapse-entropy + λ_prof·profile reg; decide vocab 20/21 and log.
+- CFG: train p=0.1 cond drop; infer v_uncond + w(v_cond−v_uncond), w tunable. Keep model-score hook (flow cost / collapse scalar) for hybrid MC energy.
+- Practical: flow loss + regs + CFG; physics post-hoc. Exploratory: sparse ∇E_φ guidance inside ODE; grad-informed MC proposals.
+
+### Stage 3 — TCRFold-Prophet (Structure + Energy)
+- Trunk/heads: Evoformer-Single + IPA struct head; energy head E_φ (EvoEF2 surrogate, pair-pooling or lightweight GVP).
+- Data: A=general PPI (~50k) with EvoEF2; B=TCR3d/STCRDab (~500–1k) for TCR finetune.
+- Phases: 3A struct pretrain (FAPE + dist/contact), 3B energy fit (MSE to EvoEF2, decoys/noisy structures encouraged), 3C TCR finetune both heads; target corr ≥0.7 on TCR.
+- Integration: MC with E_φ or hybrid α·E_φ+β·model score; guided flow remains exploratory (apply every N ODE steps or only top-N samples).
+
+### End-to-End Loop
+1) Stage1 → scaffold bank/top-K priors.  
+2) Stage2 → CDR3β samples (CFG) with model-score.  
+3) Stage3 → TCRFold-Prophet struct + E_φ screen → MC refine (E_φ or hybrid) → final EvoEF2 check.  
+Exploratory: guided flow with ∇E_φ and grad-informed MC proposals.
+
+## Plan Review v3.1 (Feasibility Snapshot)
+
+### Overall
+| 维度 | 评分 | 评价 |
+|------|------|------|
+| 概念完整性 | ⭐⭐⭐⭐⭐ | 三个 Stage 分工明确，逻辑自洽 |
+| 技术可行性 | ⭐⭐⭐⭐☆ | 大部分可行，少数需调整 |
+| 实现复杂度 | ⭐⭐⭐☆☆ | 中高复杂度，需要排期 |
+| 创新性 | ⭐⭐⭐⭐⭐ | 多处创新点，论文价值高 |
+| Practical/Exploratory 划分 | ⭐⭐⭐⭐⭐ | 主线清晰，探索不阻塞 |
+
+结论：✅ 高度可行，按此计划执行。
+
+### Stage 1
+- 可行：ESM-2+LoRA(rank16)、MHC+allele embedding、双层 InfoNCE（MHC 主 + pMHC 辅 λ≈0.3）、多标签 BCE、Top-K/KL、MHC-only baseline。
+- 注意：未见 allele 冷启动（seq-only 或 NN fallback）；pos_mask 预计算；λ_bce 初值 0.2 后续调。
+- 预期：R@10 ≈20–40%（现 1.1%）；KL(model) < KL(baseline)。
+
+### Stage 2
+- 可行：CollapseAwareEmbedding、SequenceProfileEvoformer、7-level pairs、Dirichlet Flow、CFG(p=0.1)、entropy/profile 正则。
+- 调整：长序列需截断 MHC 或 chunked attention；x_t 用 `x_proj(x_t)+pos_emb`; Flow 头输出 20/21 需定。
+- 代码改动：在 psi_model 增 flow 分支/头；新增 `FlowTCR_Gen/flow_gen.py`（FlowMatchingModel、flow_matching_loss、ODE sample）。
+
+### Stage 3
+- 可行：3A PPI 预训，3B EvoEF2 能量回归，3C TCR 微调；E_φ surrogate + MC（复用 psiMonteCarloSampler）。
+- 资源：3A 50k PPI 3–7 天@4×A100(~40GB)；3B 1–2 天(~20GB)；3C 几小时(~16GB)。
+- 风险：E_φ 相关性<0.7 → 加 decoy/ranking loss；Guided ODE 计算大 → 留在 Exploratory。
+
+### Execution Timeline (12–16 wks, condensed)
+- W1-2: Stage1 Practical（dual InfoNCE/BCE+allele emb；Milestone R@10>20%, KL<baseline）
+- W3-5: Stage2 Practical（FlowTCRGen refactor+flow_loss+ODE+CFG；Milestone recovery>30%, ppl<10）
+- W6-8: Stage3 3A/3B（PDB+EvoEF2 labels；corr>0.6）
+- W9-10: Stage3 3C + MC 集成（corr>0.7 on TCR）
+- W11-12: End-to-end eval + paper；W13+: Exploratory（guided ODE, grad-informed MC, self-play）
+
+### Data/Checkpoint Hygiene & Ablations
+- Data: `trn_v1.jsonl` (raw), `trn_v2.jsonl` (clean), `scaffold_bank_v1.json`, `energy_labels/` (EvoEF2 cache).
+- Checkpoints: `stage1_v1/`, `stage1_v2/`, `stage2_v1/`, `stage3_phase_a/`, `stage3_phase_b/`, `stage3_phase_c/`, `pipeline_v1/`.
+- Ablations: Stage1 MHC-only vs pMHC; Stage2 ±collapse, ±hier pairs; Stage3 E_φ vs EvoEF2 ranking.
+
+### Immediate Starts
+1) Stage1 dual InfoNCE + multi-label BCE + gene-name cleanup  
+2) Stage2 psiCLM→FlowTCRGen refactor（x_t 注入 + flow head）  
+3) PDB 下载与 EvoEF2 批处理脚本
+
+---
 ## 4. Module Architecture
 
-### 4.1 Immuno-PLM (Scaffold Retrieval) — Status: **✅ Complete**
+### 4.1 Immuno-PLM (Scaffold Prior) — Status: 🔄 **In Progress**
 
-**Role**: Given pMHC, retrieve the best V/J gene scaffolds (HV, HJ, LV, LJ).
+**Role**: Model p(V, J | MHC, peptide) — MHC as strong signal, peptide as weak refinement.
 
-**Core Design**: Bi-Encoder with shared ESM-2 backbone + 4 parallel InfoNCE losses + 4 auxiliary classification heads.
+**Core Design**: ESM-2 + LoRA backbone with dual supervision (multi-positive InfoNCE + multi-label BCE).
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                     Immuno-PLM Architecture                     │
+│                   Immuno-PLM v3.1 Architecture                  │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  Input Tokens                                                   │
+│  Input: <ALLELE_EMB> + MHC_seq + Peptide_seq + [SEP]           │
 │       │                                                         │
 │       ▼                                                         │
 │  ┌───────────────────────────────────────────────────────────┐ │
-│  │      ESM-2 (esm2_t33_650M_UR50D) + LoRA Adapters          │ │
-│  │  ┌─────────────────────────────────────────────────────┐  │ │
-│  │  │  Each Self-Attention Layer:                         │  │ │
-│  │  │  Q_proj + LoRA | K_proj + LoRA | V_proj + LoRA     │  │ │
-│  │  └─────────────────────────────────────────────────────┘  │ │
-│  │  × 33 layers                                               │ │
+│  │    ESM-2 (esm2_t33_650M_UR50D) + LoRA (rank16, α=32)      │ │
+│  │    + Allele Embedding Table (HLA-A*02:01 → vector)        │ │
 │  └──────────────────────────┬────────────────────────────────┘ │
 │                             │                                   │
 │                             ▼                                   │
-│               Sequence Features [B, L, 1280]                    │
+│               z_pmhc [B, 256] (CLS pooling + projection)        │
 │                             │                                   │
-│              ┌──────────────┴──────────────┐                    │
-│              │                             │                    │
-│              ▼                             ▼                    │
-│      seq_proj [1280→256]        TopologyBias (from psi_model)  │
-│              │                   - 7-level hierarchy            │
-│              │                   - pair_embed_lvl1/2            │
-│              │                             │                    │
-│              └──────────► + ◄──────────────┘                    │
-│                           │                                     │
-│                           ▼                                     │
-│                 Fused Features [B, L, 256]                      │
-│                           │                                     │
-│                           ▼                                     │
-│                 Masked Pooling + LayerNorm                      │
-│                           │                                     │
-│                           ▼                                     │
-│                 Pooled [B, 256] ──► contrastive_head            │
+│              ┌──────────────┼──────────────┐                    │
+│              ▼              ▼              ▼                    │
+│     ┌─────────────┐  ┌───────────┐  ┌────────────┐             │
+│     │ Multi-pos   │  │ Multi-pos │  │ Multi-label│             │
+│     │ InfoNCE     │  │ InfoNCE   │  │ BCE        │             │
+│     │ (MHC group) │  │ (pMHC grp)│  │ (gene IDs) │             │
+│     └─────────────┘  └───────────┘  └────────────┘             │
+│            │               │               │                    │
+│            └───────────────┴───────────────┘                    │
+│                             │                                   │
+│                             ▼                                   │
+│     L = L_NCE_MHC + λ_pmhc·L_NCE_pMHC + λ_bce·L_BCE            │
+│         (λ_pmhc≈0.3, λ_bce≈0.2)                                │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-_LoRA adapters are part of the design but are not implemented in the current codebase; current backbone is BasicTokenizer or frozen ESM features._
-
-**Training (implemented subset)**:
-`ash
-python flowtcr_fold/Immuno_PLM/train_plm.py --data data/trn.csv --batch_size 32 --epochs 100
-# Optional (frozen ESM features if installed):
-python flowtcr_fold/Immuno_PLM/train_plm.py --data data/trn.csv --use_esm --esm_model esm2_t6_8M_UR50D
-`
-
-**Loss**: Batch InfoNCE (safe from false negatives)
-
-### 4.2 FlowTCR-Gen (Flow Matching Generator)
-
-**Role**: Generate CDR3β sequences given pMHC and scaffold conditions.
-
-```python
-class FlowMatchingModel(nn.Module):
-    """
-    Discrete Flow Matching for CDR3β generation.
-    
-    Flow setup:
-    - Base x_0: Uniform distribution over amino acids
-    - Target y: One-hot ground truth sequence
-    - Interpolant: x_t = (1-t) * x_0 + t * y
-    - Vector field: v* = y - x_0
-    - Loss: ||v_θ(x_t, t, cond) - v*||²
-    """
-    
-    def __init__(self, vocab_size=21, hidden_dim=256, n_layers=6):
-        # Conditioning encoder
-        # Time embedding
-        # Transformer backbone
-        # Vector field head
-        pass
-    
-    def forward(self, x_t, t, condition):
-        # Returns: predicted vector field [B, L, vocab_size]
-        pass
-```
-
-**Conditioning Inputs**:
-1. pMHC embedding (from Immuno-PLM)
-2. Scaffold embedding (from Immuno-PLM)
-3. (Optional) TM-align PSSM
-4. (Optional) Geometry features from TCRFold-Light
-
-### 4.3 TCRFold-Light (Structure Critic)
-
-**Role**: Predict structural features and energy for candidate filtering.
-
-```python
-class TCRFoldLight(nn.Module):
-    """
-    MSA-free Evoformer-lite for structure prediction.
-    
-    Outputs:
-    - Distance map: [B, L, L, n_bins]
-    - Contact map: [B, L, L, 1]
-    - Energy: [B, 1] (surrogate for EvoEF2)
-    """
-    
-    def __init__(self, s_dim=512, z_dim=128, n_layers=12):
-        # Evoformer blocks (Triangle updates + attention)
-        # Distance head
-        # Contact head
-        # Energy head
-        pass
-```
+**Key Design Choices**:
+- **Dual-group InfoNCE**: MHC-only grouping (main) + pMHC grouping (auxiliary λ≈0.3)
+- **Multi-label BCE**: V/J gene IDs as multi-hot targets with pos_weight/focal
+- **Metrics**: Top-K recall + KL(p_emp || p_model) vs frequency baseline
 
 **Training**:
-- **Phase 1**: Generic PPI pretraining (PDB contacts)
-- **Phase 2**: TCR-specific finetuning (STCRDab/TCR3d)
-- **Losses**: Distance MSE + Contact BCE (10× weight for interface) + Energy MSE
+```bash
+python -m flowtcr_fold.Immuno_PLM.train_scaffold_retrieval \
+    --data flowtcr_fold/data/trn.jsonl \
+    --use_esm --use_lora --lora_rank 16 \
+    --epochs 100 --batch_size 16
+```
+
+### 4.2 FlowTCR-Gen (CDR3β Generator) — Status: 🔄 **40% Complete**
+
+**Role**: Topology-aware discrete flow generation conditioned on pMHC + scaffold.
+
+**Core Innovation**: Reuses `psi_model` components for rich conditioning.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                   FlowTCR-Gen v3.1 Architecture                 │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Input: [ψ, CDR3β(x_t), peptide, MHC, HV, HJ, LV, LJ]          │
+│       │                                                         │
+│       ▼                                                         │
+│  ┌───────────────────────────────────────────────────────────┐ │
+│  │    CollapseAwareEmbedding (from psi_model)                │ │
+│  │    + Hierarchical Pair IDs (7 levels)                     │ │
+│  │    + Region-specific adaptive weights                     │ │
+│  └──────────────────────────┬────────────────────────────────┘ │
+│                             │                                   │
+│                             ▼                                   │
+│  ┌───────────────────────────────────────────────────────────┐ │
+│  │    SequenceProfileEvoformer (from psi_model)              │ │
+│  │    + Time embedding injection                             │ │
+│  └──────────────────────────┬────────────────────────────────┘ │
+│                             │                                   │
+│                             ▼                                   │
+│  ┌───────────────────────────────────────────────────────────┐ │
+│  │    Flow Head: Linear(s_dim → 20/21)                       │ │
+│  │    Output: v_pred for CDR3β region only                   │ │
+│  └───────────────────────────────────────────────────────────┘ │
+│                                                                 │
+│  Loss = MSE(v_pred, v_true) + λ_ent·collapse_entropy           │
+│       + λ_prof·profile_reg                                     │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Key Features**:
+- **Collapse Token (ψ)**: Global observer aggregating cross-region information
+- **Hierarchical Pairs**: 7-level topology encoding CDR3↔peptide, CDR3↔MHC interactions
+- **Dirichlet Flow**: x0 = uniform Dirichlet, x1 = one-hot target
+- **CFG Support**: p=0.1 drop conditioning during training; tunable w at inference
+
+**Training**:
+```bash
+python -m flowtcr_fold.FlowTCR_Gen.train_flow \
+    --data flowtcr_fold/data/trn.jsonl \
+    --epochs 100 --batch_size 32 --lr 1e-4
+```
+
+### 4.3 TCRFold-Prophet (Structure + Energy) — Status: 🔄 **75% Complete**
+
+**Role**: Validate structural plausibility and predict binding energy for candidate filtering.
+
+**Architecture**: Evoformer-Single + IPA structure head + Energy surrogate E_φ
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                  TCRFold-Prophet Architecture                   │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Input: TCR + pMHC sequences (concatenated)                     │
+│       │                                                         │
+│       ▼                                                         │
+│  ┌───────────────────────────────────────────────────────────┐ │
+│  │    ESM-2 per-residue features + chain type embedding      │ │
+│  └──────────────────────────┬────────────────────────────────┘ │
+│                             │                                   │
+│                             ▼                                   │
+│  ┌───────────────────────────────────────────────────────────┐ │
+│  │    Evoformer-Single Trunk (N layers)                      │ │
+│  │    - Triangle attention + pair update + single attention  │ │
+│  └──────────────────────────┬────────────────────────────────┘ │
+│                             │                                   │
+│              ┌──────────────┼──────────────┐                    │
+│              ▼              ▼              ▼                    │
+│     ┌─────────────┐  ┌───────────┐  ┌────────────┐             │
+│     │ S_ψ: IPA    │  │ Distance  │  │ E_φ: Energy│             │
+│     │ Struct Head │  │ + Contact │  │ Surrogate  │             │
+│     └─────────────┘  └───────────┘  └────────────┘             │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Training Phases**:
+| Phase | Data | Objective | Target |
+|-------|------|-----------|--------|
+| 3A | General PPI (~50k) | FAPE + dist/contact | Trunk pretraining |
+| 3B | PPI + EvoEF2 labels | MSE(E_φ, E_EvoEF2) | Energy surrogate |
+| 3C | TCR3d + STCRDab | Finetune all heads | ≥0.7 corr with EvoEF2 |
+
+**Scope Tiers**:
+- 🔴 **Must**: S_ψ + E_φ + post-hoc screening
+- 🟡 **Should**: Offline MC refinement with E_φ
+- 🟢 **Exploratory**: Gradient guidance in Flow ODE
 
 ---
 
@@ -351,8 +562,7 @@ Optional:
 ├── h_v        : Heavy chain V gene
 ├── h_j        : Heavy chain J gene
 ├── l_v        : Light chain V gene (alpha)
-├── l_j        : Light chain J gene (alpha)
-└── cdr3_a     : CDR3α sequence
+└── l_j        : Light chain J gene (alpha)
 ```
 
 ### 5.3 Scaffold Bank Construction
@@ -389,36 +599,31 @@ print(f"Unique scaffolds: {len(scaffold_bank)}")
 
 ## 6. Training Workflows
 
-### 6.1 Scaffold Retrieval Training
+### 6.1 Scaffold Prior Training (Immuno-PLM)
 
-**Objective**: Learn pMHC → V/J scaffold mapping for retrieval.
+**Objective**: Model p(V, J | MHC, peptide) with dual supervision.
 
 ```bash
-# Basic mode (fast debugging)
+# Production mode (ESM-2 + LoRA + dual supervision)
 python -m flowtcr_fold.Immuno_PLM.train_scaffold_retrieval \
     --data flowtcr_fold/data/trn.jsonl \
-    --epochs 100 --batch_size 32
-
-# ESM-2 + LoRA mode (production)
-python -m flowtcr_fold.Immuno_PLM.train_scaffold_retrieval \
-    --data flowtcr_fold/data/trn.jsonl \
-    --use_esm --use_lora --lora_rank 8 \
+    --use_esm --use_lora --lora_rank 16 \
     --epochs 100 --batch_size 16 \
-    --cls_weight 0.2
+    --lambda_pmhc 0.3 --lambda_bce 0.2
 ```
 
-**Loss Function** (InfoNCE + Classification):
+**Loss Function** (Dual-Group InfoNCE + Multi-label BCE):
 
 ```python
-# 4 parallel InfoNCE losses (main)
-loss_nce = InfoNCE(z_pmhc, z_hv) + InfoNCE(z_pmhc, z_hj) + \
-           InfoNCE(z_pmhc, z_lv) + InfoNCE(z_pmhc, z_lj)
+# Multi-positive InfoNCE with dual grouping
+loss_nce_mhc = multi_pos_infonce(z_pmhc, z_hv, pos_mask_mhc) + ...  # MHC grouping
+loss_nce_pmhc = multi_pos_infonce(z_pmhc, z_hv, pos_mask_pmhc) + ... # pMHC grouping
 
-# 4 classification losses (auxiliary)
-loss_cls = CrossEntropy(logits_hv, hv_id) + ...
+# Multi-label BCE for gene ID prediction
+loss_bce = BCEWithLogits(logits_hv, multi_hot_hv, pos_weight=class_weights) + ...
 
-# Total
-loss = loss_nce + 0.2 * loss_cls
+# Total (λ_pmhc≈0.3, λ_bce≈0.2)
+loss = loss_nce_mhc + λ_pmhc * loss_nce_pmhc + λ_bce * loss_bce
 ```
 
 ### 6.2 FlowTCR-Gen Training
@@ -447,37 +652,43 @@ def flow_matching_loss(model, x_0, y, condition):
     return F.mse_loss(v_pred, v_target)
 ```
 
-### 6.3 TCRFold-Light Training
+### 6.3 TCRFold-Prophet Training (3-Phase)
 
-**Objective**: Learn structure prediction with energy supervision.
+**Objective**: Learn structure prediction + energy surrogate for physics validation.
 
 ```bash
-python flowtcr_fold/TCRFold_Light/train_with_energy.py \
+# Phase 3A: General PPI structure pretraining
+python -m flowtcr_fold.TCRFold_Light.train_ppi_impl \
     --pdb_dir data/pdb_structures \
-    --cache_dir data/energy_cache \
-    --epochs 100 \
-    --batch_size 4 \
-    --interface_weight 10.0 \
-    --out_dir checkpoints/tcrfold
+    --epochs 100 --batch_size 4 \
+    --out_dir checkpoints/stage3_phase_a
+
+# Phase 3B: Energy surrogate fitting
+python -m flowtcr_fold.TCRFold_Light.train_energy_surrogate \
+    --pdb_dir data/pdb_structures \
+    --evoef2_cache data/energy_labels \
+    --epochs 50 --batch_size 8 \
+    --out_dir checkpoints/stage3_phase_b
+
+# Phase 3C: TCR-specific finetuning
+python -m flowtcr_fold.TCRFold_Light.train_tcr_impl \
+    --tcr_pdb_dir data/tcr_structures \
+    --pretrain_ckpt checkpoints/stage3_phase_b/best.pt \
+    --epochs 50 --batch_size 4 \
+    --out_dir checkpoints/stage3_phase_c
 ```
 
-**Loss Function** (Physics-guided):
+**Loss Functions by Phase**:
 
 ```python
-def compute_physics_loss(pred, target, interface_mask):
-    # Distance loss
-    loss_dist = F.mse_loss(pred['distance'], target['distance'])
-    
-    # Contact loss (10× weight for interface)
-    loss_contact = F.binary_cross_entropy(
-        pred['contact'], target['contact'],
-        weight=1 + 9 * interface_mask  # 10× for interface
-    )
-    
-    # Energy loss (EvoEF2 supervision)
-    loss_energy = F.mse_loss(pred['energy'], target['energy'])
-    
-    return loss_dist + loss_contact + loss_energy
+# Phase 3A: Structure losses
+L_3A = L_FAPE + 0.3 * L_dist + 0.3 * L_contact
+
+# Phase 3B: Add energy surrogate
+L_3B = L_FAPE + 0.3 * L_dist + L_energy  # MSE(E_φ, E_EvoEF2)
+
+# Phase 3C: TCR-specific (all heads)
+L_3C = L_FAPE + 0.3 * L_dist + 0.3 * L_contact + L_energy
 ```
 
 ### 6.4 Training Preferences
@@ -711,29 +922,35 @@ This project builds upon validated components from previous work:
 
 ---
 
-## 11. Status & Roadmap
+## 11. Status & Roadmap (Plan v3.1)
 
 ### 11.1 Implementation Status
 
-| Module | Status | Notes |
-|--------|--------|-------|
-| **Data Infrastructure** | ✅ 90% | Triplet sampler, tokenizer, scaffold bank |
-| **Immuno-PLM** | ✅ 100% | Scaffold retrieval with InfoNCE + Classification |
-| **FlowTCR-Gen** | 🔄 40% | Basic flow matching, needs full conditioning |
-| **TCRFold-Light** | ✅ 75% | EvoEF2 integration complete |
-| **Physics Module** | ✅ 90% | EvoEF2 wrapper fully functional |
-| **Inference Pipeline** | 🔄 50% | Skeleton implemented |
+| Stage | Module | Status | Key Milestones |
+|-------|--------|--------|----------------|
+| 1 | **Immuno-PLM** | 🔄 70% | Dual InfoNCE + BCE pending; R@10 target 20-40% |
+| 2 | **FlowTCR-Gen** | 🔄 40% | Collapse/pairs integrated; CFG + flow head pending |
+| 3A | **TCRFold-Prophet (PPI)** | 🔄 30% | PDB download + FAPE training pending |
+| 3B | **Energy Surrogate (E_φ)** | 🔄 20% | EvoEF2 batch processing ready; NN fitting pending |
+| 3C | **TCR Finetune** | ⏳ 0% | Depends on 3A/3B completion |
+| — | **End-to-end Pipeline** | 🔄 50% | Skeleton implemented; integration pending |
 
-### 11.2 Roadmap
+### 11.2 Execution Timeline (12-16 weeks)
 
-| Phase | Tasks | Priority |
-|-------|-------|----------|
-| **Phase 1** | Validate Immuno-PLM training (Batch InfoNCE) | 🔴 High |
-| **Phase 2** | Implement scaffold retrieval evaluation | 🔴 High |
-| **Phase 3** | Complete FlowTCR-Gen with full conditioning | 🟡 Medium |
-| **Phase 4** | TCRFold-Light training with PDB data | 🟡 Medium |
-| **Phase 5** | End-to-end pipeline integration | 🟡 Medium |
-| **Phase 6** | Benchmarking against baselines | 🟢 Low |
+| Week | Stage | Tasks | Milestone |
+|------|-------|-------|-----------|
+| W1-2 | Stage 1 | Dual InfoNCE + BCE + allele emb | R@10 > 20%, KL < baseline |
+| W3-5 | Stage 2 | FlowTCRGen refactor + ODE + CFG | Recovery > 30%, PPL < 10 |
+| W6-8 | Stage 3A/3B | PPI pretrain + energy fit | Corr > 0.6 with EvoEF2 |
+| W9-10 | Stage 3C | TCR finetune + MC integration | Corr > 0.7 on TCR |
+| W11-12 | Integration | End-to-end eval + paper draft | Full pipeline functional |
+| W13+ | Exploratory | Guided ODE, grad-MC, self-play | Optional enhancements |
+
+### 11.3 Immediate Priorities
+
+1. 🔴 **Stage 1**: Dual-group InfoNCE + multi-label BCE + gene-name cleanup
+2. 🔴 **Stage 2**: psiCLM → FlowTCRGen refactor (x_t injection + flow head)
+3. 🟡 **Stage 3**: PDB download + EvoEF2 batch processing scripts
 
 ---
 
@@ -746,6 +963,6 @@ This project builds upon validated components from previous work:
 
 ---
 
-**Last Updated**: 2025-11-28  
-**Version**: 2.0  
+**Last Updated**: 2025-12-01  
+**Version**: 3.1  
 **Maintainers**: FlowTCR-Fold Team
