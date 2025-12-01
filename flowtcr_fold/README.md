@@ -4,6 +4,20 @@
 
 ---
 
+## 🚀 FlowTCR-Fold v3.1 Quick Reference
+
+| Stage | Module | Method | Key Innovation |
+|-------|--------|--------|----------------|
+| **1** | [Immuno-PLM](Immuno_PLM/IMPLEMENTATION_PLAN.md) | p(V,J \| MHC, peptide) | Dual-group InfoNCE + Multi-label BCE |
+| **2** | [FlowTCR-Gen](FlowTCR_Gen/IMPLEMENTATION_PLAN.md) | Dirichlet Flow Matching | Collapse Token + Hierarchical Pairs (7-level) |
+| **3** | [TCRFold-Prophet](TCRFold_Light/IMPLEMENTATION_PLAN.md) | Structure S_ψ + Energy E_φ | EvoEF2-NN Surrogate + Offline MC |
+
+**Execution**: W1-2 Stage 1 → W3-5 Stage 2 → W6-10 Stage 3 → W11-12 Integration
+
+📋 **Detailed Plans**: Click the module links above for step-by-step implementation guides.
+
+---
+
 ## Table of Contents
 
 1. [Project Overview](#1-project-overview)

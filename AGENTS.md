@@ -92,6 +92,7 @@ This window serves as the **Master Planning Window**. Each Stage has its own Imp
 - [ ] E1: Allele Sequence Fallback
 - [ ] E2: Hard Negative Mining
 - [ ] E3: Contrastive + Generative Joint Training
+- [ ] E4: Causal LM Head for Generative Scaffold
 
 ### Stage 2: FlowTCR-Gen (W3-5)
 - [ ] Phase 1: 复用 psi_model 组件

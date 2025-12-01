@@ -29,3 +29,5 @@ npm install -g @anthropic-ai/claude-code
 npm i -g @openai/codex
 
 git pull origin main
+
+git push origin work

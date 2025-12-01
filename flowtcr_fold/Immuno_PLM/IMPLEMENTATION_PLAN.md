@@ -500,6 +500,22 @@ ablation_configs = [
 - **接口预留**：`update_scaffold_bank_with_generated()`
 - **状态**：[ ] 待设计
 
+### 🟢 E4: Causal LM Head for Generative Scaffold
+- **问题**：当前 Stage 1 只做检索，不能直接生成新的 V/J 序列
+- **方案**：添加 Causal LM 头，将检索式变为生成式
+- **输入**：masked scaffold + pMHC 作为 context
+- **输出**：autoregressively generate V/J sequence
+- **接口预留**：
+  ```python
+  class ImmunoPLM:
+      def generate_scaffold(self, pmhc_emb: torch.Tensor, max_len: int = 128) -> str:
+          """Causal generation of V/J sequence"""
+          pass
+  ```
+- **训练**：在 retrieval loss 之外加 LM cross-entropy loss
+- **优势**：可生成训练集未见的新 V/J 组合
+- **状态**：[ ] 待设计
+
 ---
 
 ## 8. 成功标准
