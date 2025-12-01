@@ -167,7 +167,7 @@ class ImmunoPLM(nn.Module):
                 self.esm_model, self.alphabet = esm.pretrained.esm2_t12_35M_UR50D()
                 self.repr_layer = 12
             else:
-                self.esm_model, self.alphabet = esm.pretrained.esm2_t6_8M_UR50D()
+            self.esm_model, self.alphabet = esm.pretrained.esm2_t6_8M_UR50D()
                 self.repr_layer = 6
             self.embed_dim = self.esm_model.embed_dim
             # LoRA
@@ -248,7 +248,7 @@ class ImmunoPLM(nn.Module):
                     if return_pair_repr and b_idx == 0:
                         z_topo = z_pair
             s = s + self.pair_fusion(z_context)
-
+            
         # Gene conditioning
         if gene_ids:
             gene_vecs = []

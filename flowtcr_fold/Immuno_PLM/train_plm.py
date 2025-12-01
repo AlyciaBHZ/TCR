@@ -437,7 +437,7 @@ def main():
     best_loss = float("inf")
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    
+
     for epoch in range(args.epochs):
         print(f"\nEpoch {epoch + 1}/{args.epochs}")
         
@@ -470,7 +470,7 @@ def main():
         if stopper.update(current_loss):
             print(f"\nEarly stopping at epoch {epoch + 1}")
             break
-    
+
     # Save final model
     torch.save(model.state_dict(), out_dir / "immuno_plm_final.pt")
     print(f"\nTraining complete! Models saved to {out_dir}")

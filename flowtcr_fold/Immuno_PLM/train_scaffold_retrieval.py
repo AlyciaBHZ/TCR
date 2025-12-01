@@ -35,6 +35,14 @@ Usage:
         --epochs 100 --batch_size 16
 """
 
+# Force unbuffered output for real-time logging (especially with SLURM)
+import sys
+import os
+os.environ["PYTHONUNBUFFERED"] = "1"
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(line_buffering=True)
+    sys.stderr.reconfigure(line_buffering=True)
+
 import argparse
 import csv
 import json
@@ -976,9 +984,15 @@ def parse_args():
     p.add_argument("--patience", type=int, default=20,
                    help="Early stopping patience (epochs without improvement)")
     
-    # Output
-    p.add_argument("--out_dir", type=str, default="checkpoints/scaffold_retrieval")
+    # Output & Checkpointing
+    p.add_argument("--out_dir", type=str, default="flowtcr_fold/Immuno_PLM/checkpoints")
     p.add_argument("--log_interval", type=int, default=10)
+    p.add_argument("--ckpt_interval", type=int, default=10,
+                   help="Save checkpoint every N epochs")
+    p.add_argument("--auto_resume", action="store_true", default=True,
+                   help="Automatically resume from latest checkpoint in out_dir")
+    p.add_argument("--no_resume", action="store_true",
+                   help="Force fresh start, ignore existing checkpoints")
     
     return p.parse_args()
 
@@ -1059,20 +1073,85 @@ def main():
     from flowtcr_fold.common.utils import EarlyStopper, save_checkpoint
     stopper = EarlyStopper(patience=args.patience)
     
-    # Training
-    print("\nStarting training...")
-    print("-" * 60)
-    
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Auto-resume: find latest checkpoint in out_dir
+    start_epoch = 0
+    best_loss = float("inf")
+    
+    def find_latest_checkpoint(out_dir: Path):
+        """Find the latest checkpoint (highest epoch or newest model_best.pt)."""
+        import re
+        
+        # Find all epoch checkpoints
+        epoch_ckpts = list(out_dir.glob("scaffold_epoch_*.pt"))
+        max_epoch = 0
+        max_epoch_ckpt = None
+        
+        for ckpt in epoch_ckpts:
+            match = re.search(r"epoch_(\d+)", ckpt.name)
+            if match:
+                epoch = int(match.group(1))
+                if epoch > max_epoch:
+                    max_epoch = epoch
+                    max_epoch_ckpt = ckpt
+        
+        # Check model_best.pt
+        best_ckpt = out_dir / "model_best.pt"
+        
+        if max_epoch_ckpt is None and not best_ckpt.exists():
+            return None, 0  # No checkpoints found
+        
+        # Compare modification times: use whichever is newer
+        if max_epoch_ckpt and best_ckpt.exists():
+            if max_epoch_ckpt.stat().st_mtime > best_ckpt.stat().st_mtime:
+                return max_epoch_ckpt, max_epoch
+            else:
+                # model_best is newer, but we don't know its epoch
+                # Use max_epoch_ckpt for resuming (has optimizer state)
+                return max_epoch_ckpt, max_epoch
+        elif max_epoch_ckpt:
+            return max_epoch_ckpt, max_epoch
+        else:
+            # Only model_best exists (no epoch checkpoints)
+            return best_ckpt, 0
+    
+    if args.auto_resume and not args.no_resume:
+        resume_path, resume_epoch = find_latest_checkpoint(out_dir)
+        
+        if resume_path is not None:
+            print(f"\n{'='*60}")
+            print("AUTO-RESUME: Found existing checkpoint!")
+            print(f"{'='*60}")
+            print(f"  Loading: {resume_path}")
+            
+            model.load_state_dict(torch.load(resume_path, map_location=device))
+            
+            # Try to load optimizer state
+            opt_path = resume_path.with_suffix(".opt")
+            if opt_path.exists():
+                optimizer.load_state_dict(torch.load(opt_path, map_location=device))
+                print(f"  Loaded optimizer state: {opt_path.name}")
+            
+            start_epoch = resume_epoch
+            print(f"  Resuming from epoch {start_epoch}")
+            print(f"{'='*60}")
+        else:
+            print("\nNo existing checkpoints found, starting fresh training.")
+    elif args.no_resume:
+        print("\n--no_resume specified, starting fresh training.")
+    
+    # Training
+    print("\nStarting training...")
+    print(f"Checkpoint interval: every {args.ckpt_interval} epochs")
+    print("-" * 60)
     
     # Save gene vocab
     with open(out_dir / "gene_vocab.json", "w") as f:
         json.dump(train_ds.gene_vocab, f, indent=2)
     
-    best_loss = float("inf")
-    
-    for epoch in range(args.epochs):
+    for epoch in range(start_epoch, args.epochs):
         print(f"\nEpoch {epoch + 1}/{args.epochs}")
         
         # Train
@@ -1094,9 +1173,10 @@ def main():
             torch.save(model.state_dict(), out_dir / "model_best.pt")
             print(f"  New best model! (loss={best_loss:.4f})")
         
-        # Checkpoint every 50 epochs
-        if (epoch + 1) % 50 == 0:
+        # Checkpoint every N epochs
+        if (epoch + 1) % args.ckpt_interval == 0:
             save_checkpoint(model, optimizer, str(out_dir), epoch + 1, tag="scaffold")
+            print(f"  Checkpoint saved: scaffold_epoch_{epoch + 1}.pt")
         
         # Early stopping
         if stopper.update(current_loss):

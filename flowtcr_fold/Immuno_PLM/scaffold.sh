@@ -15,18 +15,25 @@ mkdir -p ~/logs
 source ~/.bashrc
 conda activate torch
 
+# Force unbuffered output for real-time logging
+export PYTHONUNBUFFERED=1
+
 cd /mnt/rna01/zwlexa/project/TCR
 
 echo "Job: $SLURM_JOB_ID on $(hostname) at $(date)"
 
 # Training
-python -m flowtcr_fold.Immuno_PLM.train_scaffold_retrieval \
+# - Uses -u for unbuffered output (real-time logging)
+# - Auto-resumes from latest checkpoint if exists
+# - Checkpoints saved to flowtcr_fold/Immuno_PLM/checkpoints/
+# - Add --no_resume to force fresh start
+python -u -m flowtcr_fold.Immuno_PLM.train_scaffold_retrieval \
     --data flowtcr_fold/data/trn.jsonl \
     --val_data flowtcr_fold/data/val.jsonl \
     --use_esm \
     --use_lora \
     --esm_model esm2_t12_35M_UR50D \
     --batch_size 64 \
-    --out_dir checkpoints/scaffold_v1
+    --ckpt_interval 10
 
 echo "Done at $(date)"
