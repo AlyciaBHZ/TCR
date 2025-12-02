@@ -1,0 +1,58 @@
+========================================
+Job: 1068172 on zgpuA1003
+Start: Tue Dec  2 05:50:09 +08 2025
+Mode: NORMAL (peptide-on)
+Log: flowtcr_fold/Immuno_PLM/saved_model/stage1/train_1068172.log
+========================================
+======================================================================
+Stage 1: Immuno-PLM Scaffold Prior Training
+======================================================================
+Mode: NORMAL
+Data: flowtcr_fold/data/trn.jsonl
+Model: ESM=esm2_t33_650M_UR50D + LoRA(rank=16)
+Loss weights: λ_pmhc=0.3, λ_bce=0.2, λ_pep=0.1
+Output: flowtcr_fold/Immuno_PLM/saved_model/stage1
+Device: cuda
+======================================================================
+[Dataset] Filtered 209407 -> 209406 (require peptide)
+[Dataset] Has MHC: 135104 (64.5%), Missing MHC: 74302
+[Dataset] Samples: 209406 | Gene vocab HV/HJ/LV/LJ = 401/110/236/177 | Alleles=175
+[Dataset] Filtered 24020 -> 24020 (require peptide)
+[Dataset] Has MHC: 15495 (64.5%), Missing MHC: 8525
+[Dataset] Samples: 24020 | Gene vocab HV/HJ/LV/LJ = 401/110/236/177 | Alleles=175
+[LoRA] Trainable params: 5,406,720/656,449,974 (0.82%)
+Params: 6,083,228/657,126,482 trainable (0.93%)
+
+Building frequency baseline...
+Frequency Baseline R@K (train):
+  h_v: R@1=0.077, R@5=0.258, R@10=0.402, R@20=0.578
+  h_j: R@1=0.142, R@5=0.494, R@10=0.739, R@20=0.947
+  l_v: R@1=0.067, R@5=0.216, R@10=0.347, R@20=0.535
+  l_j: R@1=0.046, R@5=0.152, R@10=0.248, R@20=0.408
+
+Starting training from epoch 1...
+
+Epoch 1/100
+  Train: loss=32.3165 | NCE(mhc)=5.687 NCE(pmhc)=7.771 NCE(pep)=8.006 | BCE=117.487
+  Val: loss=352.6887 | NCE(mhc)=5.590 NCE(pmhc)=7.558 NCE(pep)=7.811 | BCE=1720.250
+       HV: R@1=0.381 R@5=0.741 R@10=0.870 R@20=0.964 | HJ: R@1=0.219 R@5=0.656 R@10=0.821 R@20=0.942
+       LV: R@1=0.514 R@5=0.926 R@10=0.995 R@20=1.000 | LJ: R@1=0.532 R@5=0.931 R@10=0.998 R@20=1.000
+       Baseline R@10: HV=0.393 HJ=0.744 LV=0.331 LJ=0.236
+       Δ vs Baseline: HV=+0.478 HJ=+0.077 LV=+0.664 LJ=+0.762
+       KL_HV=3.2374 | KL_HJ=3.6732
+  ✓ New best model saved (loss=352.6887)
+
+Epoch 2/100
+  Train: loss=8.6112 | NCE(mhc)=5.541 NCE(pmhc)=7.533 NCE(pep)=7.794 | BCE=0.152
+  Val: loss=526.5377 | NCE(mhc)=5.516 NCE(pmhc)=7.435 NCE(pep)=7.697 | BCE=2590.105
+       HV: R@1=0.390 R@5=0.752 R@10=0.879 R@20=0.969 | HJ: R@1=0.221 R@5=0.660 R@10=0.832 R@20=0.946
+       LV: R@1=0.522 R@5=0.934 R@10=0.996 R@20=1.000 | LJ: R@1=0.528 R@5=0.932 R@10=0.999 R@20=1.000
+       Baseline R@10: HV=0.393 HJ=0.744 LV=0.331 LJ=0.236
+       Δ vs Baseline: HV=+0.487 HJ=+0.088 LV=+0.665 LJ=+0.763
+       KL_HV=4.1252 | KL_HJ=4.2010
+
+Epoch 3/100
+  Train: loss=8.5197 | NCE(mhc)=5.496 NCE(pmhc)=7.460 NCE(pep)=7.720 | BCE=0.069
+========================================
+Done: Tue Dec  2 16:36:16 +08 2025
+========================================

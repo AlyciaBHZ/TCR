@@ -3,6 +3,13 @@
 ## Scope
 - Primary job: help build the full pipeline in `/mnt/rna01/zwlexa/project/TCR/flowtcr_fold`. Other folders are legacy reference/data; do not drift focus.
 - Track progress and self-reminders here; update as milestones complete.
+- Code preferences (recorded for all stages):
+  - Always enable early stopping and checkpoint saving.
+  - Save outputs per stage under `saved_model/` with subdirs `checkpoints/`, `other_results/`, `best_model/`.
+- Keep project layout clean: `src/`, `train.py`, `model.py` per module for clarity.
+- Avoid version numbers in filenames/modules; use clear names (e.g., `data_scaffold.py`, not `*_v1.py`).
+- Before making code changes, confirm the need and scope with the user; default to no-op until requirements are explicit.
+- Keep runtime configs in code (fixed paths/ESM+LoRA defaults); only expose minimal CLI toggles (e.g., ablation) to avoid long argument lists.
 
 ## Non-Negotiable Reminders
 1) Base new models on legacy `psi_model` pairwise embeddings + Evoformer logic.  
