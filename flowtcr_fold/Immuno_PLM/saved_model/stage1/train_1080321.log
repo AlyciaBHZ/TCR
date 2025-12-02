@@ -1,0 +1,51 @@
+========================================
+Job: 1080321 on zgpuA1002
+Start: Tue Dec  2 16:36:33 +08 2025
+Mode: NORMAL (peptide-on)
+Log: flowtcr_fold/Immuno_PLM/saved_model/stage1/train_1080321.log
+========================================
+======================================================================
+Stage 1: Immuno-PLM Scaffold Prior Training
+======================================================================
+Mode: NORMAL
+Data: flowtcr_fold/data/trn.jsonl
+Model: ESM=esm2_t33_650M_UR50D + LoRA(rank=16)
+Loss weights: λ_pmhc=0.3, λ_bce=0.2, λ_pep=0.1
+Output: flowtcr_fold/Immuno_PLM/saved_model/stage1
+Device: cuda
+======================================================================
+[Dataset] Filtered 209407 -> 209406 (require peptide)
+[Dataset] Has MHC: 135104 (64.5%), Missing MHC: 74302
+[Dataset] Samples: 209406 | Gene vocab HV/HJ/LV/LJ = 401/110/236/177 | Alleles=175
+
+[pos_weight stats]
+  h_v: min=4.27, max=50.00, mean=40.73
+  h_j: min=2.71, max=50.00, mean=38.28
+  l_v: min=4.65, max=50.00, mean=35.53
+  l_j: min=5.60, max=50.00, mean=27.87
+[Dataset] Filtered 24020 -> 24020 (require peptide)
+[Dataset] Has MHC: 15495 (64.5%), Missing MHC: 8525
+[Dataset] Samples: 24020 | Gene vocab HV/HJ/LV/LJ = 401/110/236/177 | Alleles=175
+[LoRA] Trainable params: 5,406,720/656,449,974 (0.82%)
+Params: 6,083,228/657,126,482 trainable (0.93%)
+
+Building frequency baseline...
+Frequency Baseline R@K (train):
+  h_v: R@1=0.077, R@5=0.258, R@10=0.402, R@20=0.578
+  h_j: R@1=0.142, R@5=0.494, R@10=0.739, R@20=0.947
+  l_v: R@1=0.067, R@5=0.216, R@10=0.347, R@20=0.535
+  l_j: R@1=0.046, R@5=0.152, R@10=0.248, R@20=0.408
+
+Starting training from epoch 1...
+
+Epoch 1/100
+  Train: loss=8.9448 | NCE(mhc)=5.664 NCE(pmhc)=7.724 NCE(pep)=7.979 | BCE=0.828
+  Val: loss=10.1661 | NCE(mhc)=5.557 NCE(pmhc)=7.544 NCE(pep)=7.816 | BCE=7.820
+       HV: R@1=0.389 R@5=0.749 R@10=0.874 R@20=0.964 | HJ: R@1=0.208 R@5=0.659 R@10=0.827 R@20=0.946
+       LV: R@1=0.522 R@5=0.928 R@10=0.997 R@20=1.000 | LJ: R@1=0.524 R@5=0.932 R@10=0.998 R@20=1.000
+       Baseline R@10: HV=0.393 HJ=0.744 LV=0.331 LJ=0.236
+       Δ vs Baseline: HV=+0.481 HJ=+0.083 LV=+0.666 LJ=+0.762
+       KL_HV=1.9330 | KL_HJ=1.8374
+  ✓ New best model saved (loss=10.1661)
+
+Epoch 2/100

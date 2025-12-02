@@ -1,0 +1,36 @@
+检查结果
+已完成的修改
+pos_weight 已修改为 sqrt dampening + cap 50 ✅
+没有发现其他严重逻辑问题
+检查项	状态
+BCE 只在 has_mhc 样本上计算	✅
+valid_mask 正确过滤空 targets	✅
+train/val 都用 train_ds.pos_weight	✅
+4个 gene type 都参与 BCE	✅
+建议：添加 pos_weight logging 来验证修改效果
+train.py
++16
+-2
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")    # Determine output directory
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")        # Determine output directory    # Dataset / Loader
+train.py
+-7
+    # Dataset / Loader    train_ds = ScaffoldRetrievalDataset(        str(cfg.train_data), tokenizer=tokenizer, max_len=cfg.max_len, build_vocab=True    )    collate_train = collate_fn_factory(tokenizer, cfg.max_len, train_ds, mask_peptide=mask_peptide)
+    # Tokenizer    tokenizer = get_tokenizer()    # Dataset / Loader    train_ds = ScaffoldRetrievalDataset(        str(cfg.train_data), tokenizer=tokenizer, max_len=cfg.max_len, build_vocab=True    )    collate_train = collate_fn_factory(tokenizer, cfg.max_len, train_ds, mask_peptide=mask_peptide)
+✅ 完成修改总结
+1. pos_weight 修改 (data.py)
+# 修改前: w = total / (c + 1e-3)  → 可达 ~135,000# 修改后: w = sqrt(total / c), cap 50  → 范围 [1, 50]
+2. 添加 pos_weight logging (train.py)
+训练开始时会打印：
+[pos_weight stats]  h_v: min=X.XX, max=50.00, mean=X.XX  h_j: min=X.XX, max=50.00, mean=X.XX  l_v: min=X.XX, max=50.00, mean=X.XX  l_j: min=X.XX, max=50.00, mean=X.XX
+
+预期效果
+指标	修改前	修改后预期
+pos_weight 范围	1 ~ 135,000	1 ~ 50
+Train BCE	→ 0 (过拟合)	稳定 ~5-20
+Val BCE	飙升到 3000+	稳定 ~10-30
+Train-Val BCE 差距	100,000x	<10x
+
+如果 pos_weight 修改后 BCE 仍然不稳定，可以进一步：
+降低 lambda_bce 从 0.2 到 0.1
+添加 BCE warmup（前几个 epoch λ_bce=0）

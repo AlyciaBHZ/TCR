@@ -16,3 +16,4 @@ __pycache__/
 *.jsonl
 *.bin
 *.opt
+*.txt

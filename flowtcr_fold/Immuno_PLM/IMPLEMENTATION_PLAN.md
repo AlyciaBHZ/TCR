@@ -79,6 +79,12 @@
 2. **Gene name 混淆**：`h_v` 字段包含 `TRAV` 基因（α 链），需数据清洗
 3. **长尾分布**：V/J gene 分布极度不均，需 pos_weight 或 focal loss
 4. **Peptide 消融缺位**：当前未在同一模型内快速切换「含 peptide」vs「仅 MHC」输入，ablation 需集成。
+5. **代码结构偏乱**：主要逻辑在 `train_scaffold_retrieval.py`，需按 v3.1 方案整理（src/、train.py/model.py 拆分，统一 ckpt 目录）。
+
+### 2.4 代码清理与结构要求
+- 以 `Immuno_PLM/train_scaffold_retrieval.py` 为主参考，梳理到 `src/` 下的模块化代码（e.g., `src/model.py`, `src/train.py`, `src/data.py`）。
+- 启用早停与 checkpoint：保存到 `saved_model/stage1_v*/checkpoints/`、`other_results/`、`best_model/` 目录。
+- CLI 需提供 ckpt 路径、early stopping、peptide on/off ablation 开关，保持与 plan v3.1 一致。
 
 ---
 
@@ -331,7 +337,7 @@ def create_mhc_only_input(batch):
 ```
 
 #### Step 5.3: 内置 Peptide Ablation（同模型快速对比）
-- 训练/评估参数：`--peptide_on` 控制是否喂 peptide；`--log_ablation_peptide_off` 评估阶段自动再跑一次「peptide masked」前向，记录 R@K/KL（同一 checkpoint）。
+- 训练/评估参数：仅保留 `--ablation`（peptide-off）；默认训练会自动在评估阶段再跑一次 peptide-masked 前向并记录 R@K/KL（同一 checkpoint）。
 - 作用：无需额外模型就能产出 pMHC vs MHC-only 指标；若需纯 MHC-only 训练，仍可将 peptide 全部置空并完整训练一版作为严格 baseline。
 
 ---
@@ -345,7 +351,7 @@ def create_mhc_only_input(batch):
 - **Early stopping patience**: 20 epochs
 
 ### 4.2 数据问题
-- **Gene name 清洗**: 检查 `h_v` 是否包含 `TRAV`
+- **Gene name 清洗**: 当前数据已检查，无 TRAV 泄漏（保持监控即可）
 - **缺失值处理**: LV/LJ 缺失时用 `<NONE>` token，不参与对应 loss
 - **Batch 采样**: 确保每个 batch 内有足够多的同 MHC 样本
 
@@ -359,33 +365,33 @@ def create_mhc_only_input(batch):
 ## 5. Checklist
 
 ### Phase 1: 数据准备
-- [ ] 检查并修复 gene name 混淆（TRAV/TRBV）
-- [ ] 构建 AlleleVocab 类
-- [ ] 实现 `collate_fn_with_pos_mask()` 预计算分组 mask
-- [ ] 计算 gene 频率用于 pos_weight
+- [x] Gene name 检查：当前数据无 TRAV 泄漏（无需额外清理）
+ - [x] Allele 处理：保持简单字典映射（不引入类/序列 fallback，按需求待定）
+ - [x] 实现 `collate_fn_with_pos_mask()` 预计算分组 mask
+ - [x] 计算 gene 频率用于 pos_weight
 
 ### Phase 2: Multi-positive InfoNCE
-- [ ] 实现 `compute_infonce_multi_positive()` 函数
-- [ ] 修改 `train_epoch()` 使用双层 InfoNCE
-- [ ] 添加 `λ_pmhc` 超参数控制
+- [x] 实现 `compute_infonce_multi_positive()` 函数
+- [x] 修改 `train_epoch()` 使用双层 InfoNCE（仅 has_mhc 子集；缺 MHC 仅参与 peptide 分组）
+- [x] 添加 `λ_pmhc` 超参数控制
 
 ### Phase 3: Multi-label BCE
-- [ ] 实现 `build_multilabel_target()` 函数
-- [ ] 实现 `compute_classification_loss_multilabel()` 函数
-- [ ] 添加 `λ_bce` 超参数控制
+- [x] 实现 `build_multilabel_target()` 函数（数据侧预建 multi-hot）
+- [x] 实现 `compute_classification_loss_multilabel()` 函数（仅 has_mhc）
+- [x] 添加 `λ_bce` 超参数控制
 
 ### Phase 4: 评估指标
-- [ ] 实现 `evaluate_topk_recall()` 函数
-- [ ] 实现 `evaluate_kl_divergence()` 函数
-- [ ] 在 `evaluate()` 中调用并打印
+- [x] 实现 `evaluate_topk_recall()` 函数（多 K 汇总）
+- [x] 实现 `evaluate_kl_divergence()` 函数
+- [x] 在 `evaluate()` 中调用并打印
 
 ### Phase 5: Baseline
-- [ ] 实现频率 baseline
-- [ ] 实现 MHC-only model 输入接口
-- [ ] 添加 `--peptide_on` 和 `--log_ablation_peptide_off` 参数
+- [x] 实现频率 baseline
+- [x] 实现 MHC-only model 输入接口（peptide mask ablation）
+- [x] CLI 精简：仅 `--ablation`（peptide-off），其余参数写死
 
 ### Phase 6: Ablation Studies (必做)
-- [ ] 实现 `evaluate_with_ablation()` 函数
+- [x] 实现 `evaluate_with_ablation()` 函数（自动 peptide-off 评估）
 - [ ] pMHC vs MHC-only 对比记录
 - [ ] λ_pmhc = {0.0, 0.3, 1.0} 对比记录
 - [ ] ±BCE loss 对比记录
@@ -471,7 +477,7 @@ ablation_configs = [
 
 | Ablation | 配置 | 指标 | 状态 |
 |----------|------|------|------|
-| pMHC vs MHC-only | `--peptide_on` / `--log_ablation_peptide_off` | R@10, KL | [ ] |
+| pMHC vs MHC-only | 默认评估 + `--ablation` (peptide-off) | R@10, KL | [ ] |
 | MHC-group vs pMHC-group | `λ_pmhc = 0.0 / 0.3 / 1.0` | R@10, KL | [ ] |
 | ±BCE loss | `λ_bce = 0.0 / 0.2` | R@10 | [ ] |
 | Frequency baseline | N/A | R@10, KL | [ ] |
@@ -498,6 +504,22 @@ ablation_configs = [
 - **问题**：Stage 1 和 Stage 2 独立训练
 - **方案**：用 Stage 2 生成的 CDR3β 反馈 Stage 1
 - **接口预留**：`update_scaffold_bank_with_generated()`
+- **状态**：[ ] 待设计
+
+### 🟢 E4: Causal LM Head for Generative Scaffold
+- **问题**：当前 Stage 1 只做检索，不能直接生成新的 V/J 序列
+- **方案**：添加 Causal LM 头，将检索式变为生成式
+- **输入**：masked scaffold + pMHC 作为 context
+- **输出**：autoregressively generate V/J sequence
+- **接口预留**：
+  ```python
+  class ImmunoPLM:
+      def generate_scaffold(self, pmhc_emb: torch.Tensor, max_len: int = 128) -> str:
+          """Causal generation of V/J sequence"""
+          pass
+  ```
+- **训练**：在 retrieval loss 之外加 LM cross-entropy loss
+- **优势**：可生成训练集未见的新 V/J 组合
 - **状态**：[ ] 待设计
 
 ---
@@ -537,3 +559,12 @@ class ImmunoPLM:
 
 **Last Updated**: 2025-12-01  
 **Owner**: Stage 1 Implementation Team
+
+---
+
+## 10. 工作日志 / Checklist
+- 2025-12-02: 重构训练脚本到现有目录（data.py, losses.py, model.py, train_utils.py, train.py）；启用双组 InfoNCE + 多标签 BCE；缺 MHC 样本仅参与 peptide 分组弱权重 InfoNCE，不参与 MHC 分组/BCE；输出路径标准化 `saved_model/` 下的 checkpoints/best/other_results；allele 处理保持简单字典（未启用序列 fallback）；CLI 精简为固定路径/ESM+LoRA 默认，仅支持 `--ablation`（peptide-off）与 `--resume/--resume_best`。旧版本代码已归档至 `old_version/`。
+  - 运行指引：
+    - 默认（含 peptide，自动评估 peptide-off）：`python flowtcr_fold/Immuno_PLM/train.py`
+    - Peptide-off 训练：`python flowtcr_fold/Immuno_PLM/train.py --ablation`
+    - 恢复：`--resume` 或 `--resume_best`（路径写死）
