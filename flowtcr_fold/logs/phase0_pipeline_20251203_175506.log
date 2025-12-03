@@ -1,0 +1,44 @@
+[2025-12-03 17:55:06] INFO - 日志文件: flowtcr_fold/logs/phase0_pipeline_20251203_175506.log
+[2025-12-03 17:55:06] INFO - ============================================================
+[2025-12-03 17:55:06] INFO - Phase 0 自动化管线启动
+[2025-12-03 17:55:06] INFO - ============================================================
+[2025-12-03 17:55:06] INFO - 配置:
+[2025-12-03 17:55:06] INFO -   - Batch 文件: 5 个
+[2025-12-03 17:55:06] INFO -   - 原始目录: flowtcr_fold/data/pdb_structures/raw
+[2025-12-03 17:55:06] INFO -   - 处理目录: flowtcr_fold/data/pdb_structures/processed
+[2025-12-03 17:55:06] INFO -   - 能量缓存: flowtcr_fold/data/energy_cache.jsonl
+[2025-12-03 17:55:06] INFO -   - 等待间隔: 30 分钟
+[2025-12-03 17:55:06] INFO - 跳过下载等待检查
+[2025-12-03 17:55:06] INFO - 
+========================================
+[2025-12-03 17:55:06] INFO - Step 2: 运行 PPI 预处理
+[2025-12-03 17:55:06] INFO - ========================================
+[2025-12-03 17:55:08] INFO - 已有 76448 个 .npz 文件
+[2025-12-03 17:55:08] INFO - 原始 PDB 文件数: 47109
+[2025-12-03 17:55:08] INFO - 运行预处理: /mnt/rna01/zwlexa/miniconda3/envs/torch/bin/python flowtcr_fold/TCRFold_Light/process_pdb/preprocess_ppi_pairs.py --pdb_dir flowtcr_fold/data/pdb_structures/raw --out_dir flowtcr_fold/data/pdb_structures/processed --cutoff 8.0 --min_len 30 --min_contacts 10
+[2025-12-03 18:55:36] INFO - [preprocess] [OK]   6T92.cif: saved 2 pairs
+[2025-12-03 19:01:46] INFO - [preprocess] [OK]   7H1V.cif: saved 1 pairs
+[2025-12-03 19:01:46] INFO - [preprocess] [OK]   7I20.cif: saved 1 pairs
+[2025-12-03 19:01:46] INFO - [preprocess] [OK]   7OIQ.cif: saved 1 pairs
+[2025-12-03 19:12:53] INFO - [preprocess] [OK]   7SSH.cif: saved 29 pairs
+[2025-12-03 19:12:53] INFO - [preprocess] [OK]   8RP6.cif: saved 2 pairs
+[2025-12-03 19:16:25] INFO - [preprocess] [OK]   8YXQ.cif: saved 1 pairs
+[2025-12-03 19:16:25] INFO - [preprocess] [OK]   9C34.cif: saved 1 pairs
+[2025-12-03 19:16:25] INFO - [preprocess] [OK]   9EL7.cif: saved 1 pairs
+[2025-12-03 19:19:05] INFO - [preprocess] [OK]   9GAO.cif: saved 1 pairs
+[2025-12-03 19:19:05] INFO - [preprocess] [OK]   9HGM.cif: saved 1 pairs
+[2025-12-03 19:21:16] INFO - [preprocess] [OK]   9KY9.cif: saved 1 pairs
+[2025-12-03 19:21:16] INFO - [preprocess] [OK]   9QZ0.cif: saved 1 pairs
+[2025-12-03 19:21:17] INFO - ✅ 预处理完成！现有 78896 个 .npz 文件 (新增 2448)
+[2025-12-03 19:21:17] INFO - 
+========================================
+[2025-12-03 19:21:17] INFO - Step 3: 运行 EvoEF2 能量计算
+[2025-12-03 19:21:17] INFO - ========================================
+[2025-12-03 19:21:17] INFO - 已有 0 个能量记录
+[2025-12-03 19:21:17] INFO - 运行 EvoEF2 能量计算: /mnt/rna01/zwlexa/miniconda3/envs/torch/bin/python flowtcr_fold/TCRFold_Light/process_pdb/compute_evoef2_batch.py --pdb_dir flowtcr_fold/data/pdb_structures/raw --output flowtcr_fold/data/energy_cache.jsonl --repair --append
+[2025-12-03 19:21:18] INFO - [EvoEF2] Traceback (most recent call last):
+[2025-12-03 19:21:18] INFO - [EvoEF2] File "/mnt/rna01/zwlexa/project/TCR/flowtcr_fold/TCRFold_Light/process_pdb/compute_evoef2_batch.py", line 21, in <module>
+[2025-12-03 19:21:18] INFO - [EvoEF2] from flowtcr_fold.physics.evoef_runner import EvoEF2Runner
+[2025-12-03 19:21:18] INFO - [EvoEF2] ModuleNotFoundError: No module named 'flowtcr_fold'
+[2025-12-03 19:21:18] ERROR - EvoEF2 计算失败，返回码: 1
+[2025-12-03 19:21:18] ERROR - EvoEF2 计算失败

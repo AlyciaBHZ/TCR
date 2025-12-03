@@ -10,6 +10,12 @@
 - Avoid version numbers in filenames/modules; use clear names (e.g., `data_scaffold.py`, not `*_v1.py`).
 - Before making code changes, confirm the need and scope with the user; default to no-op until requirements are explicit.
 - Keep runtime configs in code (fixed paths/ESM+LoRA defaults); only expose minimal CLI toggles (e.g., ablation) to avoid long argument lists.
+- Stage 3 hygiene: keep Phase0 PDB/energy scripts inside `flowtcr_fold/TCRFold_Light/process_pdb/` with stage-specific names; avoid scattering under `scripts/`.
+
+## Environment Setup
+- **Conda environment**: `conda activate torch`
+- **Working directory**: `/mnt/rna01/zwlexa/project/TCR`
+- **Python**: Use `conda activate torch` before running any scripts
 
 ## Non-Negotiable Reminders
 1) Base new models on legacy `psi_model` pairwise embeddings + Evoformer logic.  
@@ -53,8 +59,12 @@
 ## Command Cheatsheet (FlowTCR-Fold)
 - Immuno-PLM (LoRA+ESM target): `python flowtcr_fold/Immuno_PLM/train_plm.py --data data/trn.csv --use_esm --use_lora --esm_model esm2_t33_650M_UR50D --lora_rank 8 --batch_size 32 --epochs 100 --out_dir checkpoints/plm`
 - FlowTCR-Gen: `python flowtcr_fold/FlowTCR_Gen/train_flow.py --data data/trn.csv --epochs 100 --batch_size 32 --lr 1e-4 --out_dir checkpoints/flow`
-- TCRFold-Light PPI pretrain (first milestone): `python flowtcr_fold/TCRFold_Light/train_ppi_impl.py --pdb_dir data/pdb_structures --cache_dir data/energy_cache --epochs 100 --batch_size 4 --out_dir checkpoints/tcrfold`
+- TCRFold-Light PPI/TCR training: pending new entrypoint(s) (previous stubs removed); add commands once real scripts land under `flowtcr_fold/TCRFold_Light/`.
 - End-to-end design (once ready): `python flowtcr_fold/FlowTCR_Gen/pipeline_impl.py --peptide <pep> --mhc <allele> --top_k_scaffolds 10 --samples_per_scaffold 100 --output results/designs.csv`
+- Stage3 Phase0 (stage-local scripts under `flowtcr_fold/TCRFold_Light/process_pdb/`):
+  - Download by ID list: `python flowtcr_fold/TCRFold_Light/process_pdb/download_from_id_list.py --id_file flowtcr_fold/data/pdb/batch1.txt --out_dir flowtcr_fold/data/pdb_structures/raw --num_workers 16`
+  - Preprocess PPI pairs: `python flowtcr_fold/TCRFold_Light/process_pdb/preprocess_ppi_pairs.py --pdb_dir flowtcr_fold/data/pdb_structures/raw --out_dir flowtcr_fold/data/pdb_structures/processed --cutoff 8.0 --min_len 30 --min_contacts 10`
+  - (After EvoEF2 present) Batch energies: `python flowtcr_fold/TCRFold_Light/process_pdb/compute_evoef2_batch.py --pdb_dir flowtcr_fold/data/pdb_structures/raw --output flowtcr_fold/data/energy_cache.jsonl --repair`
 
 ## Multi-Agent Coordination Structure
 
@@ -62,8 +72,8 @@ This window serves as the **Master Planning Window**. Each Stage has its own Imp
 
 | Stage | Implementation Plan | Status |
 |-------|---------------------|--------|
-| Stage 1 | `flowtcr_fold/Immuno_PLM/IMPLEMENTATION_PLAN.md` | 🔄 70% |
-| Stage 2 | `flowtcr_fold/FlowTCR_Gen/IMPLEMENTATION_PLAN.md` | 🔄 40% |
+| Stage 1 | `flowtcr_fold/Immuno_PLM/IMPLEMENTATION_PLAN.md` | ✅ 90% (R@10 88%) |
+| Stage 2 | `flowtcr_fold/FlowTCR_Gen/IMPLEMENTATION_PLAN.md` | ✅ 90% (Code Complete) |
 | Stage 3 | `flowtcr_fold/TCRFold_Light/IMPLEMENTATION_PLAN.md` | 🔄 30% |
 
 ### Workflow
@@ -86,14 +96,20 @@ This window serves as the **Master Planning Window**. Each Stage has its own Imp
 
 ## Stage-Specific Progress (sync from IMPLEMENTATION_PLAN.md)
 
-### Stage 1: Immuno-PLM (W1-2)
-- [ ] Phase 1: 数据准备 (gene name cleanup, AlleleVocab, pos_mask)
-- [ ] Phase 2: Multi-positive InfoNCE 实现
-- [ ] Phase 3: Multi-label BCE 实现
-- [ ] Phase 4: Top-K/KL 评估指标
-- [ ] Phase 5: Baseline 对比
-- [ ] **Phase 6 (Ablation)**: pMHC vs MHC-only, ±BCE, λ_pmhc sweep
-- [ ] **Milestone**: R@10 > 20%, KL < baseline
+### Stage 1: Immuno-PLM (W1-2) ✅ 完成
+- [x] Phase 1: 数据准备 (gene name cleanup, AlleleVocab, pos_mask)
+- [x] Phase 2: Multi-positive InfoNCE 实现
+- [x] Phase 3: Multi-label BCE 实现
+- [x] Phase 4: Top-K/KL 评估指标
+- [x] Phase 5: Baseline 对比
+- [x] **Phase 6 (Ablation)**: pMHC vs MHC-only 完成 (Δ ≈ +0.5%)
+- [x] **Milestone**: R@10 = 88.9% (远超 20% 目标)
+
+**Latest Results (2025-12-02)**:
+| Mode | R@10 HV | R@10 HJ | R@10 LV | R@10 LJ |
+|------|---------|---------|---------|---------|
+| Normal (pMHC) | 88.9% | 83.3% | 99.8% | 99.9% |
+| Ablation (MHC-only) | 88.1% | 82.9% | 99.7% | 99.8% |
 
 **Exploratory (Stage 1)**:
 - [ ] E1: Allele Sequence Fallback
@@ -101,14 +117,22 @@ This window serves as the **Master Planning Window**. Each Stage has its own Imp
 - [ ] E3: Contrastive + Generative Joint Training
 - [ ] E4: Causal LM Head for Generative Scaffold
 
-### Stage 2: FlowTCR-Gen (W3-5)
-- [ ] Phase 1: 复用 psi_model 组件
-- [ ] Phase 2: Dirichlet Flow Matching
-- [ ] Phase 3: CFG 实现
-- [ ] Phase 4: Model Score Hook
-- [ ] Phase 5: 评估指标
-- [ ] **Phase 6 (Ablation)**: ±Collapse, ±Hier Pairs, CFG sweep, Conditioning components
-- [ ] **Milestone**: Recovery > 30%, PPL < 10
+### Stage 2: FlowTCR-Gen (W3-5) ✅ 代码完成
+- [x] Phase 1: 复用 psi_model 组件 (CollapseAwareEmbedding, SequenceProfileEvoformer)
+- [x] Phase 2: Dirichlet Flow Matching (dirichlet_flow.py)
+- [x] Phase 3: CFG 实现 (CFGWrapper, cfg_drop_prob)
+- [x] Phase 4: Model Score Hook (get_model_score, get_collapse_scalar)
+- [x] Phase 5: 评估指标 (metrics.py: recovery, diversity, ppl)
+- [ ] **Phase 6 (Ablation)**: ±Collapse, ±Hier Pairs, CFG sweep → 待训练运行
+- [ ] **Milestone**: Recovery > 30%, PPL < 10 → 待训练验证
+
+**新增文件 (2025-12-03)**:
+- `encoder.py`: FlowTCRGenEncoder + CollapseAwareEmbedding
+- `dirichlet_flow.py`: DirichletFlowMatcher + CFGWrapper
+- `model_flow.py`: FlowTCRGen 主模型
+- `data.py`: Dataset + Tokenizer
+- `metrics.py`: 评估指标
+- `train.py`: 训练脚本 (支持 --ablation)
 
 **Exploratory (Stage 2)**:
 - [ ] E1: Physics Gradient Guidance in ODE

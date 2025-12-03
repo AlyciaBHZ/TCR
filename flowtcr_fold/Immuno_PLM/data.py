@@ -301,8 +301,8 @@ def collate_fn_factory(
             # MHC groups: only meaningful for samples with MHC
             # For samples without MHC, assign unique key so they don't group together
             if sample_has_mhc:
-                mhc_groups.append(sample["mhc"])
-                pmhc_groups.append((sample["peptide"], sample["mhc"]))
+            mhc_groups.append(sample["mhc"])
+            pmhc_groups.append((sample["peptide"], sample["mhc"]))
             else:
                 # Each sample without MHC gets unique group (self-contrast only)
                 mhc_groups.append(f"__NO_MHC_{idx}__")
@@ -313,7 +313,7 @@ def collate_fn_factory(
 
             # Multi-hot targets (MHC group) - empty for samples without MHC
             if sample_has_mhc:
-                tgt_mhc = dataset.group_targets_mhc.get(sample["mhc"], {"h_v": [], "h_j": [], "l_v": [], "l_j": []})
+            tgt_mhc = dataset.group_targets_mhc.get(sample["mhc"], {"h_v": [], "h_j": [], "l_v": [], "l_j": []})
             else:
                 tgt_mhc = {"h_v": [], "h_j": [], "l_v": [], "l_j": []}
             multihot_hv.append(torch.tensor(tgt_mhc["h_v"], dtype=torch.float) if tgt_mhc["h_v"] else torch.zeros(len(dataset.gene_vocab["h_v"])))

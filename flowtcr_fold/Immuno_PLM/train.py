@@ -64,7 +64,7 @@ class Config:
     lambda_pep = 0.1    # Peptide-only InfoNCE weight (for samples without MHC)
 
     # Logging
-    ckpt_interval = 10
+    ckpt_interval = 5  # More frequent checkpoints for safety
     log_interval = 25
 
 
@@ -129,7 +129,7 @@ def main():
     args = parse_args()
     cfg = Config()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
+
     # Determine output directory
     out_dir = get_output_dir(args.ablation)
     out_paths = prepare_dirs(out_dir)
@@ -225,6 +225,7 @@ def main():
 
     stopper = EarlyStopper(patience=cfg.patience)
     best_loss = float("inf")
+    best_r10_avg = 0.0  # Track best R@10 for model saving (more meaningful than loss)
 
     # Save vocab/meta
     with open(out_paths["root"] / "gene_vocab.json", "w") as f:
@@ -279,7 +280,7 @@ def main():
         if val_loader is not None and val_ds is not None:
             val_stats = evaluate(
                 model, val_loader, device, train_args, 
-                pos_weight=train_ds.pos_weight, 
+                pos_weight=train_ds.pos_weight,
                 frequency_baseline=freq_baseline,
                 k_list=cfg.k_list,
             )
@@ -315,13 +316,31 @@ def main():
                 print(f"       KL_HV={val_stats['kl_hv']:.4f} | KL_HJ={val_stats['kl_hj']:.4f}")
 
             current_loss = val_stats["loss"]
+            
+            # Compute average R@10 across all gene types for best model selection
+            r10_hv = val_stats.get("recall@10_hv", 0.0)
+            r10_hj = val_stats.get("recall@10_hj", 0.0)
+            r10_lv = val_stats.get("recall@10_lv", 0.0)
+            r10_lj = val_stats.get("recall@10_lj", 0.0)
+            current_r10_avg = (r10_hv + r10_hj + r10_lv + r10_lj) / 4
 
-        # Save best
-        if current_loss < best_loss:
-            best_loss = current_loss
-            torch.save(model.state_dict(), out_paths["best"] / "model_best.pt")
-            torch.save(optimizer.state_dict(), out_paths["best"] / "optimizer_best.pt")
-            print(f"  ✓ New best model saved (loss={best_loss:.4f})")
+            # Save best model based on R@10 (more meaningful than loss due to BCE overfitting)
+            if current_r10_avg > best_r10_avg:
+                best_r10_avg = current_r10_avg
+                torch.save(model.state_dict(), out_paths["best"] / "model_best.pt")
+                torch.save(optimizer.state_dict(), out_paths["best"] / "optimizer_best.pt")
+                with open(out_paths["best"] / "best_metrics.json", "w") as f:
+                    json.dump({
+                        "epoch": epoch + 1,
+                        "r10_avg": best_r10_avg,
+                        "r10_hv": r10_hv, "r10_hj": r10_hj, "r10_lv": r10_lv, "r10_lj": r10_lj,
+                        "val_loss": current_loss,
+                    }, f, indent=2)
+                print(f"  ✓ New best model saved (R@10_avg={best_r10_avg:.4f})")
+            
+            # Track loss for early stopping (still useful)
+            if current_loss < best_loss:
+                best_loss = current_loss
 
         # Periodic checkpoint
         if (epoch + 1) % cfg.ckpt_interval == 0:
@@ -337,7 +356,8 @@ def main():
     torch.save(model.state_dict(), out_paths["root"] / "model_final.pt")
     print(f"\n{'='*70}")
     print(f"Training complete!")
-    print(f"  Best loss: {best_loss:.4f}")
+    print(f"  Best R@10 avg: {best_r10_avg:.4f}")
+    print(f"  Best val loss: {best_loss:.4f}")
     print(f"  Artifacts: {out_paths['root']}")
     print(f"{'='*70}")
 
