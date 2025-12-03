@@ -23,6 +23,8 @@ then excute the above script:
 use "squeue -u zwlexa" to find available nodes
 zgpuA403
 
+
+sinfo -o "%P %C"
 CPUS(A/I/O/T)
 A = Allocated 已被占用
 I = Idle 空闲

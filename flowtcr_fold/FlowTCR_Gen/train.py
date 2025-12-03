@@ -57,7 +57,7 @@ N_LAYERS = 6
 VOCAB_SIZE = 25  # 20 AA + 5 special
 
 # Training config (fixed)
-BATCH_SIZE = 16
+BATCH_SIZE = 32
 EPOCHS = 100
 LR = 1e-4
 WEIGHT_DECAY = 0.01
@@ -303,7 +303,7 @@ def save_checkpoint(
     torch.save(ckpt, out_dir / "checkpoints" / "latest.pt")
     
     # Save periodic checkpoint
-    if (epoch + 1) % 10 == 0:
+    if (epoch + 1) % 5 == 0:
         torch.save(ckpt, out_dir / "checkpoints" / f"epoch_{epoch+1}.pt")
     
     # Save best
