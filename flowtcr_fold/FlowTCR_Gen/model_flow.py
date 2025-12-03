@@ -262,8 +262,8 @@ class FlowTCRGen(nn.Module):
             next(self.parameters()).device
         )
         
-        # Initialize x_0 (uniform prior) with batch dim
-        x = sample_x0_uniform(1, cdr3_len, self.vocab_size, device)  # [1, L, vocab]
+        # Initialize x_0 using the configured prior (Dirichlet or uniform) with batch dim
+        x = self.flow_matcher.sample_x0(1, cdr3_len, device)  # [1, L, vocab]
         cdr3_mask = torch.ones(1, cdr3_len, device=device)
         
         # Convert tokens to one-hot
@@ -435,9 +435,8 @@ class FlowTCRGen(nn.Module):
                 v_true_valid = v_true[0, :valid_len]  # [valid_len, vocab]
                 diff = (v_pred - v_true_valid) ** 2  # [valid_len, vocab]
                 
-                # Per-position MSE, then average over valid positions
-                pos_mse = diff.sum(dim=-1)  # [valid_len]
-                mse = pos_mse.mean()  # scalar
+                denom = max(valid_len, 1) * float(self.vocab_size)
+                mse = diff.sum() / denom
                 
                 total_mse += mse
         
@@ -545,22 +544,29 @@ if __name__ == "__main__":
     
     print(f"✅ FlowTCRGen created with {sum(p.numel() for p in model.parameters()):,} parameters")
     
-    # Mock batch
+    # Mock batch with per-sample conditioning
     B, L = 2, 15
+    L_pep, L_mhc = 9, 10
     vocab_size = 25
     
     batch = {
         'cdr3_tokens': torch.randint(0, vocab_size, (B, L), device=device),
         'cdr3_mask': torch.ones(B, L, device=device),
-        'pep_one_hot': F.one_hot(torch.randint(0, vocab_size, (9,), device=device), vocab_size).float(),
-        'pep_idx': torch.arange(9, device=device),
-        'mhc_one_hot': F.one_hot(torch.randint(0, vocab_size, (50,), device=device), vocab_size).float(),
-        'mhc_idx': torch.arange(50, device=device),
-        'scaffold_seqs': {
-            'hv': F.one_hot(torch.randint(0, vocab_size, (30,), device=device), vocab_size).float(),
+        'pep_tokens': torch.randint(0, vocab_size, (B, L_pep), device=device),
+        'pep_mask': torch.ones(B, L_pep, device=device),
+        'mhc_tokens': torch.randint(0, vocab_size, (B, L_mhc), device=device),
+        'mhc_mask': torch.ones(B, L_mhc, device=device),
+        'scaffold_tokens': {
+            'hv': torch.randint(0, vocab_size, (B, 5), device=device),
+            'hj': torch.randint(0, vocab_size, (B, 3), device=device),
+            'lv': torch.randint(0, vocab_size, (B, 5), device=device),
+            'lj': torch.randint(0, vocab_size, (B, 3), device=device),
         },
-        'scaffold_idx': {
-            'hv': torch.arange(30, device=device),
+        'scaffold_mask': {
+            'hv': torch.ones(B, 5, device=device),
+            'hj': torch.ones(B, 3, device=device),
+            'lv': torch.ones(B, 5, device=device),
+            'lj': torch.ones(B, 3, device=device),
         },
     }
     
@@ -568,34 +574,34 @@ if __name__ == "__main__":
     losses = model.training_step(batch)
     print(f"✅ Forward pass: loss={losses['loss'].item():.4f}, mse={losses['mse_loss'].item():.4f}")
     
-    # Test generation
+    # Test generation (single sample)
     tokens = model.generate(
         cdr3_len=L,
-        pep_one_hot=batch['pep_one_hot'],
-        pep_idx=batch['pep_idx'],
-        mhc_one_hot=batch['mhc_one_hot'],
-        mhc_idx=batch['mhc_idx'],
-        scaffold_seqs=batch['scaffold_seqs'],
-        scaffold_idx=batch['scaffold_idx'],
+        pep_tokens=batch['pep_tokens'][:1],
+        pep_mask=batch['pep_mask'][:1],
+        mhc_tokens=batch['mhc_tokens'][:1],
+        mhc_mask=batch['mhc_mask'][:1],
+        scaffold_tokens={k: v[:1] for k, v in batch['scaffold_tokens'].items()},
+        scaffold_mask={k: v[:1] for k, v in batch['scaffold_mask'].items()},
         n_steps=10,
     )
     print(f"✅ Generation: tokens shape = {tokens.shape}")
     
     # Test model score
     score = model.get_model_score(
-        cdr3_tokens=batch['cdr3_tokens'][0],
-        pep_one_hot=batch['pep_one_hot'],
-        pep_idx=batch['pep_idx'],
-        mhc_one_hot=batch['mhc_one_hot'],
-        mhc_idx=batch['mhc_idx'],
-        scaffold_seqs=batch['scaffold_seqs'],
-        scaffold_idx=batch['scaffold_idx'],
-        n_steps=5,
+        cdr3_tokens=batch['cdr3_tokens'][:1],
+        cdr3_mask=batch['cdr3_mask'][:1],
+        pep_tokens=batch['pep_tokens'][:1],
+        pep_mask=batch['pep_mask'][:1],
+        mhc_tokens=batch['mhc_tokens'][:1],
+        mhc_mask=batch['mhc_mask'][:1],
+        scaffold_tokens={k: v[:1] for k, v in batch['scaffold_tokens'].items()},
+        scaffold_mask={k: v[:1] for k, v in batch['scaffold_mask'].items()},
+        n_t_samples=2,
     )
-    print(f"✅ Model score: {score.item():.4f}")
+    print(f"✅ Model score: {score:.4f}")
     
     # Test save/load
     model.save('/tmp/test_flowtcrgen.pt')
     model2 = FlowTCRGen.load('/tmp/test_flowtcrgen.pt', device=device)
     print(f"✅ Save/load test passed")
-

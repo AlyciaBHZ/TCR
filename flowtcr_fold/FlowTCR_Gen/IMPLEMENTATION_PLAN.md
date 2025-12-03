@@ -10,6 +10,7 @@
 > - ✅ All core modules implemented
 > - ✅ Ablation switches integrated (±collapse, ±hier_pairs, ±cfg)
 > - ✅ Model score hook for Stage 3 integration
+> - ✅ Per-sample conditioning + prior alignment bug fixes; legacy helper samplers deprecated
 > - 🔄 Awaiting training with real data
 
 ---

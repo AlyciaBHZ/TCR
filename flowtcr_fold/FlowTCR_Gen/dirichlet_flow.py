@@ -217,7 +217,7 @@ class DirichletFlowMatcher(nn.Module):
             pad_mask = torch.ones(L, device=device)
         
         # Target: one-hot of target tokens
-        x_1 = F.one_hot(target_tokens.clamp(min=0), self.vocab_size).float()  # [L, vocab]
+        x_1 = F.one_hot(target_tokens.clamp(min=0, max=self.vocab_size - 1), self.vocab_size).float()  # [L, vocab]
         
         # Target velocity
         v_target = compute_velocity_target(x_0, x_1)  # [L, vocab]
@@ -272,64 +272,9 @@ class DirichletFlowMatcher(nn.Module):
         uncond_emb: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """
-        Sample CDR3 sequence using Euler ODE solver.
-        
-        Args:
-            encoder_fn: Function to encode inputs (returns s, z, idx_map)
-            cdr3_len: Target CDR3 length
-            peptide, mhc, scaffold_seqs: Conditioning inputs
-            n_steps: Number of ODE integration steps
-            cfg_weight: Classifier-free guidance weight
-            uncond_emb: Unconditional embedding for CFG
-        
-        Returns:
-            tokens: [L_cdr3] predicted token indices
+        Legacy sampler (old interface). Not used in the new per-sample pipeline.
         """
-        device = peptide.device
-        
-        # Initialize x_0 (uniform prior)
-        x = sample_x0_uniform(1, cdr3_len, self.vocab_size, device).squeeze(0)  # [L, vocab]
-        
-        dt = 1.0 / n_steps
-        
-        for step in range(n_steps):
-            t = torch.tensor([step / n_steps], device=device)
-            
-            # Encode with current x_t
-            s, z, idx_map = encoder_fn(
-                cdr3_xt=x,
-                t=t,
-                peptide=peptide,
-                peptide_idx=peptide_idx,
-                mhc=mhc,
-                mhc_idx=mhc_idx,
-                scaffold_seqs=scaffold_seqs,
-                scaffold_idx=scaffold_idx,
-                conditioning_info=conditioning_info,
-            )
-            
-            # Extract CDR3 representation
-            cdr3_start, cdr3_end = idx_map['cdr3']
-            cdr3_repr = s[cdr3_start:cdr3_end]  # [L_cdr3, s_dim]
-            
-            # Predict velocity
-            v = self.flow_head(cdr3_repr)  # [L_cdr3, vocab]
-            
-            # CFG (if weight > 1 and unconditional embedding provided)
-            if cfg_weight > 1.0 and uncond_emb is not None:
-                # Would need unconditioned forward pass here
-                # For now, just use conditional velocity
-                pass
-            
-            # Euler step
-            x = x + v * dt
-            
-            # Project back to simplex (normalize)
-            x = F.softmax(x, dim=-1)
-        
-        # Final prediction: argmax
-        tokens = x.argmax(dim=-1)
-        return tokens
+        raise NotImplementedError("Use FlowTCRGen.generate for sampling with the new per-sample conditioning API.")
 
     def compute_log_prob(
         self,
@@ -345,58 +290,9 @@ class DirichletFlowMatcher(nn.Module):
         n_steps: int = 100,
     ) -> torch.Tensor:
         """
-        Compute approximate log probability via integration.
-        
-        This is used for model score hook (Stage 3 integration).
+        Legacy log-prob estimator (old interface). Not used in the new pipeline.
         """
-        device = target_tokens.device
-        L = target_tokens.shape[0]
-        
-        # Target one-hot
-        x_1 = F.one_hot(target_tokens.clamp(min=0), self.vocab_size).float()
-        
-        # Prior
-        x_0 = sample_x0_uniform(1, L, self.vocab_size, device).squeeze(0)
-        
-        # Integrate velocity field to compute flow cost
-        total_cost = 0.0
-        dt = 1.0 / n_steps
-        
-        for step in range(n_steps):
-            t_val = step / n_steps
-            t = torch.tensor([t_val], device=device)
-            
-            # Interpolate
-            x_t = dirichlet_interpolate(x_0.unsqueeze(0), x_1.unsqueeze(0), t).squeeze(0)
-            
-            # Encode
-            s, z, idx_map = encoder_fn(
-                cdr3_xt=x_t,
-                t=t,
-                peptide=peptide,
-                peptide_idx=peptide_idx,
-                mhc=mhc,
-                mhc_idx=mhc_idx,
-                scaffold_seqs=scaffold_seqs,
-                scaffold_idx=scaffold_idx,
-                conditioning_info=conditioning_info,
-            )
-            
-            # CDR3 representation
-            cdr3_start, cdr3_end = idx_map['cdr3']
-            cdr3_repr = s[cdr3_start:cdr3_end]
-            
-            # Predicted velocity
-            v_pred = self.flow_head(cdr3_repr)
-            
-            # True velocity
-            v_true = x_1 - x_0
-            
-            # Accumulate squared error
-            total_cost += ((v_pred - v_true) ** 2).sum()
-        
-        # Negative log prob approximation
-        return total_cost * dt
+        raise NotImplementedError("Use FlowTCRGen.get_model_score for scoring with the new per-sample conditioning API.")
 
 
 class CFGWrapper(nn.Module):
@@ -482,57 +378,7 @@ class CFGWrapper(nn.Module):
         Args:
             cfg_weight: Guidance strength (1.0 = no guidance)
         """
-        device = peptide.device
-        
-        # Initialize x_0
-        x = sample_x0_uniform(1, cdr3_len, self.flow_matcher.vocab_size, device).squeeze(0)
-        
-        dt = 1.0 / n_steps
-        
-        for step in range(n_steps):
-            t = torch.tensor([step / n_steps], device=device)
-            
-            # Conditional forward
-            s_cond, z_cond, idx_map_cond = self.encoder(
-                cdr3_xt=x,
-                t=t,
-                peptide=peptide,
-                peptide_idx=peptide_idx,
-                mhc=mhc,
-                mhc_idx=mhc_idx,
-                scaffold_seqs=scaffold_seqs,
-                scaffold_idx=scaffold_idx,
-                conditioning_info=conditioning_info,
-            )
-            
-            cdr3_start, cdr3_end = idx_map_cond['cdr3']
-            cdr3_repr_cond = s_cond[cdr3_start:cdr3_end]
-            v_cond = self.flow_matcher.flow_head(cdr3_repr_cond)
-            
-            # Unconditional forward (empty conditioning)
-            s_uncond, z_uncond, idx_map_uncond = self.encoder(
-                cdr3_xt=x,
-                t=t,
-                peptide=peptide,
-                peptide_idx=peptide_idx,
-                mhc=mhc,
-                mhc_idx=mhc_idx,
-                scaffold_seqs=scaffold_seqs,
-                scaffold_idx=scaffold_idx,
-                conditioning_info=[],
-            )
-            
-            cdr3_repr_uncond = s_uncond[cdr3_start:cdr3_end]
-            v_uncond = self.flow_matcher.flow_head(cdr3_repr_uncond)
-            
-            # CFG combination
-            v = v_uncond + cfg_weight * (v_cond - v_uncond)
-            
-            # Euler step
-            x = x + v * dt
-            x = F.softmax(x, dim=-1)
-        
-        return x.argmax(dim=-1)
+        raise NotImplementedError("Use FlowTCRGen.generate for CFG-enabled sampling with the new per-sample conditioning API.")
 
 
 if __name__ == "__main__":
@@ -567,4 +413,3 @@ if __name__ == "__main__":
     print(f"✅ Flow matching losses:")
     for k, v in losses.items():
         print(f"   {k}: {v.item():.4f}")
-

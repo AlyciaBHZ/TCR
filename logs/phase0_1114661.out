@@ -1,0 +1,41 @@
+==============================================
+Phase 0 Pipeline Started: Wed Dec  3 23:08:13 +08 2025
+Job ID: 1114661
+Node: zcpu15
+==============================================
+
+==============================================
+Step 1: Extracting Tier 2 structure features
+==============================================
+[INFO] Found 48508 PDB/CIF files to process
+[INFO] Found 78896 existing .npz files (will skip)
+[INFO] Progress: 500/48508 files, 0 new pairs, 591 skipped
+[INFO] Progress: 1000/48508 files, 0 new pairs, 1189 skipped
+[INFO] Progress: 1500/48508 files, 0 new pairs, 1896 skipped
+[INFO] Progress: 2000/48508 files, 0 new pairs, 2550 skipped
+[INFO] Progress: 2500/48508 files, 0 new pairs, 3297 skipped
+[INFO] Progress: 3000/48508 files, 0 new pairs, 4035 skipped
+[INFO] Progress: 3500/48508 files, 0 new pairs, 4787 skipped
+[INFO] Progress: 4000/48508 files, 0 new pairs, 5506 skipped
+[INFO] Progress: 4500/48508 files, 0 new pairs, 6211 skipped
+[INFO] Progress: 5000/48508 files, 0 new pairs, 6862 skipped
+[INFO] Progress: 5500/48508 files, 0 new pairs, 7569 skipped
+[INFO] Progress: 6000/48508 files, 0 new pairs, 8330 skipped
+[INFO] Progress: 6500/48508 files, 0 new pairs, 9008 skipped
+[INFO] Progress: 7000/48508 files, 0 new pairs, 9747 skipped
+[INFO] Progress: 7500/48508 files, 0 new pairs, 10512 skipped
+[INFO] Progress: 8000/48508 files, 0 new pairs, 11308 skipped
+[INFO] Progress: 8500/48508 files, 0 new pairs, 12034 skipped
+[INFO] Progress: 9000/48508 files, 0 new pairs, 12860 skipped
+[INFO] Progress: 9500/48508 files, 0 new pairs, 13617 skipped
+[INFO] Progress: 10000/48508 files, 0 new pairs, 14431 skipped
+[INFO] Progress: 10500/48508 files, 0 new pairs, 15251 skipped
+[INFO] Progress: 11000/48508 files, 0 new pairs, 16121 skipped
+[INFO] Progress: 11500/48508 files, 0 new pairs, 17015 skipped
+[INFO] Progress: 12000/48508 files, 0 new pairs, 17851 skipped
+[INFO] Progress: 12500/48508 files, 0 new pairs, 18709 skipped
+[INFO] Progress: 13000/48508 files, 0 new pairs, 19460 skipped
+[INFO] Progress: 13500/48508 files, 0 new pairs, 20360 skipped
+[INFO] Progress: 14000/48508 files, 0 new pairs, 21212 skipped
+[INFO] Progress: 14500/48508 files, 0 new pairs, 22034 skipped
+[INFO] Progress: 15000/48508 files, 0 new pairs, 22925 skipped

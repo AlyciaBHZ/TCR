@@ -1,565 +1,434 @@
 """
-PPIDataset: 统一的蛋白质-蛋白质相互作用数据集
-==================================================
+PPIDataset: Unified dataset for PPI structure and energy data.
+Loads Tier 1+2+3 features for Stage 3 training.
 
-整合 Phase 0 数据流:
-1. .npz 文件 (seq, coords, contact_map) from preprocess_ppi_pairs.py
-2. JSONL 能量缓存 from compute_evoef2_batch.py
+Tier 2 (Structure & Interface):
+- seq_a, seq_b, ca_a, ca_b
+- contact_map, distance_map
+- n_interface_contacts, n_interface_res_a/b, interface_res_mask_a/b
 
-解决的接口对齐问题:
-- 统一数据源: 使用预处理的 .npz 而非重新解析 PDB
-- 统一缓存格式: 读取 JSONL 能量缓存，避免重复调用 EvoEF2
-- 统一链分割: 沿用 .npz 中的链对划分
-- 真实序列编码: 提供 AA index 编码而非零占位符
+Tier 1 (Global Energies):
+- E_complex, E_receptor, E_ligand, E_bind
+
+Tier 2 Derived (Normalized Energies):
+- E_bind_per_contact, E_bind_per_residue, E_complex_per_len
+
+Tier 3 (Energy Terms):
+- energy_terms.{complex, receptor, ligand}.{vdw, elec, desolv, hbond, ...}
 
 Usage:
-    >>> from flowtcr_fold.TCRFold_Light.ppi_dataset import PPIDataset, collate_ppi_batch
-    >>> dataset = PPIDataset(
-    ...     npz_dir="flowtcr_fold/data/pdb_structures/processed",
-    ...     energy_cache="flowtcr_fold/data/energy_cache.jsonl"
-    ... )
-    >>> loader = DataLoader(dataset, batch_size=4, collate_fn=collate_ppi_batch)
+    from flowtcr_fold.TCRFold_Light.ppi_dataset import PPIDataset, collate_ppi_batch
+    
+    dataset = PPIDataset(
+        data_dir="flowtcr_fold/data/ppi_merged",
+        max_length=512,
+        energy_targets=['E_bind', 'E_complex']
+    )
+    
+    loader = DataLoader(dataset, batch_size=8, collate_fn=collate_ppi_batch)
 """
 
 import json
-import os
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
-
 import numpy as np
 import torch
-from torch.utils.data import Dataset
-
-# ============================================================================
-# 氨基酸编码
-# ============================================================================
-
-AA_ALPHABET = "ACDEFGHIKLMNPQRSTVWY"  # 20 标准氨基酸
-AA_TO_IDX = {aa: i for i, aa in enumerate(AA_ALPHABET)}
-AA_TO_IDX["X"] = 20  # Unknown
-AA_TO_IDX["-"] = 21  # Gap
-PAD_IDX = 22
-VOCAB_SIZE = 23
+from pathlib import Path
+from torch.utils.data import Dataset, DataLoader
+from typing import Dict, List, Optional, Tuple
 
 
-def encode_sequence(seq: str) -> torch.Tensor:
-    """将氨基酸序列编码为索引张量。"""
-    indices = [AA_TO_IDX.get(aa.upper(), AA_TO_IDX["X"]) for aa in seq]
-    return torch.tensor(indices, dtype=torch.long)
+# Standard amino acid mapping
+AA_TO_IDX = {
+    'A': 0, 'C': 1, 'D': 2, 'E': 3, 'F': 4,
+    'G': 5, 'H': 6, 'I': 7, 'K': 8, 'L': 9,
+    'M': 10, 'N': 11, 'P': 12, 'Q': 13, 'R': 14,
+    'S': 15, 'T': 16, 'V': 17, 'W': 18, 'Y': 19,
+    'X': 20,  # Unknown
+}
+IDX_TO_AA = {v: k for k, v in AA_TO_IDX.items()}
+PAD_IDX = 21  # Padding index
 
-
-def one_hot_encode(seq: str, vocab_size: int = VOCAB_SIZE) -> torch.Tensor:
-    """将氨基酸序列编码为 one-hot 张量 [L, vocab_size]。"""
-    indices = encode_sequence(seq)
-    one_hot = torch.zeros(len(seq), vocab_size)
-    one_hot.scatter_(1, indices.unsqueeze(1), 1.0)
-    return one_hot
-
-
-# ============================================================================
-# PPIDataset
-# ============================================================================
 
 class PPIDataset(Dataset):
     """
-    统一的 PPI 数据集。
+    Dataset for PPI structures with Tier 1+2+3 features.
     
-    数据流:
-        raw/*.pdb 
-            ↓ preprocess_ppi_pairs.py
-        processed/*.npz (seq_a, seq_b, coords_a, coords_b, contact_map, n_contacts)
-            ↓ compute_evoef2_batch.py  
-        energy_cache.jsonl (pdb_id → binding_energy)
-            ↓
-        PPIDataset (本类)
-            ↓
-        train_ppi.py
+    Loads merged .npz files containing:
+    - Tier 2: Structure (seq, coords, contact_map, interface stats)
+    - Tier 1: Global energies (E_complex, E_receptor, E_ligand, E_bind)
+    - Tier 2 derived: Normalized energies
+    - Tier 3: Energy term breakdown (optional)
+    
+    Args:
+        data_dir: Directory containing merged .npz files
+        max_length: Maximum sequence length (longer sequences are skipped)
+        energy_targets: List of energy keys to include as labels
+        include_tier3: Whether to load Tier 3 energy term breakdown
+        verbose: Print loading statistics
     """
-
+    
     def __init__(
         self,
-        npz_dir: str,
-        energy_cache: Optional[str] = None,
+        data_dir: str,
         max_length: int = 512,
-        contact_threshold: float = 8.0,
-        min_contacts: int = 10,
-        use_one_hot: bool = False,
+        energy_targets: List[str] = None,
+        include_tier3: bool = False,
         verbose: bool = False
     ):
-        """
-        Args:
-            npz_dir: 预处理的 .npz 文件目录 (from preprocess_ppi_pairs.py)
-            energy_cache: JSONL 能量缓存路径 (from compute_evoef2_batch.py)
-                         如果为 None，binding_energy 返回 0.0
-            max_length: 最大序列长度 (截断)
-            contact_threshold: 接触距离阈值 (Å)，仅用于验证
-            min_contacts: 最小接触数，过滤低质量样本
-            use_one_hot: 是否使用 one-hot 编码 (否则用索引)
-            verbose: 打印加载信息
-        """
-        self.npz_dir = Path(npz_dir)
+        self.data_dir = Path(data_dir)
         self.max_length = max_length
-        self.contact_threshold = contact_threshold
-        self.min_contacts = min_contacts
-        self.use_one_hot = use_one_hot
+        self.energy_targets = energy_targets or ['E_bind', 'E_complex', 'E_receptor', 'E_ligand']
+        self.include_tier3 = include_tier3
         self.verbose = verbose
-
-        # 1. 扫描 .npz 文件
-        self.npz_files = self._scan_npz_files()
-        if self.verbose:
-            print(f"Found {len(self.npz_files)} .npz files in {npz_dir}")
-
-        # 2. 加载能量缓存
-        self.energy_cache = self._load_energy_cache(energy_cache)
-        if self.verbose:
-            print(f"Loaded {len(self.energy_cache)} energy entries from cache")
-
-        # 3. 构建有效样本列表
-        self.samples = self._build_sample_list()
-        if self.verbose:
-            print(f"PPIDataset: {len(self.samples)} valid samples")
-
-    def _scan_npz_files(self) -> List[Path]:
-        """扫描 .npz 文件。"""
-        if not self.npz_dir.exists():
-            raise ValueError(f"NPZ directory not found: {self.npz_dir}")
-        return sorted(self.npz_dir.glob("*.npz"))
-
-    def _load_energy_cache(self, cache_path: Optional[str]) -> Dict[str, float]:
-        """
-        加载 JSONL 能量缓存。
         
-        格式 (每行):
-            {"pdb_id": "1A0F", "chain_a": "A", "chain_b": "B", "binding_energy": -102.13, ...}
+        # Load all samples
+        self.samples = self._load_samples()
         
-        返回:
-            {sample_key: binding_energy} 其中 sample_key = "{pdb_id}_{chain_a}_{chain_b}"
-        """
-        if cache_path is None or not os.path.exists(cache_path):
-            return {}
-
-        cache = {}
-        with open(cache_path, 'r') as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    entry = json.loads(line)
-                    pdb_id = entry.get("pdb_id", "")
-                    chain_a = entry.get("chain_a", "A")
-                    chain_b = entry.get("chain_b", "B")
-                    binding_energy = entry.get("binding_energy", 0.0)
-                    
-                    # 构建与 .npz 文件名匹配的 key
-                    # .npz 文件名格式: {pdb_id}_{chain_a}_{chain_b}.npz
-                    sample_key = f"{pdb_id}_{chain_a}_{chain_b}"
-                    cache[sample_key] = binding_energy
-                    
-                    # 也存储简单 pdb_id (向后兼容)
-                    if pdb_id and pdb_id not in cache:
-                        cache[pdb_id] = binding_energy
-                        
-                except json.JSONDecodeError:
-                    continue
-
-        return cache
-
-    def _build_sample_list(self) -> List[Dict]:
-        """构建有效样本列表。"""
+        if self.verbose:
+            print(f"[PPIDataset] Loaded {len(self.samples)} samples from {self.data_dir}")
+    
+    def _load_samples(self) -> List[Dict]:
+        """Load and validate all .npz files."""
+        npz_files = sorted(self.data_dir.glob("*.npz"))
+        
+        if not npz_files:
+            raise FileNotFoundError(f"No .npz files found in {self.data_dir}")
+        
         samples = []
-
-        for npz_path in self.npz_files:
+        skipped_length = 0
+        skipped_missing = 0
+        
+        for npz_path in npz_files:
             try:
                 data = np.load(npz_path, allow_pickle=True)
                 
-                # 检查必要字段 (支持两种命名格式)
-                # 格式1: coords_a, coords_b, n_contacts
-                # 格式2: ca_a, ca_b, num_contacts (from preprocess_ppi_pairs.py)
-                has_format1 = all(k in data for k in ["seq_a", "seq_b", "coords_a", "coords_b", "contact_map"])
-                has_format2 = all(k in data for k in ["seq_a", "seq_b", "ca_a", "ca_b", "contact_map"])
+                # Required fields
+                seq_a = str(data['seq_a'])
+                seq_b = str(data['seq_b'])
                 
-                if not (has_format1 or has_format2):
+                # Skip if too long
+                if len(seq_a) > self.max_length or len(seq_b) > self.max_length:
+                    skipped_length += 1
                     continue
-
-                # 获取接触数
-                if "n_contacts" in data:
-                    n_contacts = int(data["n_contacts"])
-                elif "num_contacts" in data:
-                    n_contacts = int(data["num_contacts"])
-                else:
-                    n_contacts = int(data["contact_map"].sum())
                 
-                # 过滤低质量样本
-                if n_contacts < self.min_contacts:
-                    continue
-
-                # 提取 sample key 用于匹配能量
-                stem = npz_path.stem  # e.g., "1A0F_AB"
+                # Build sample dict
+                sample = {
+                    'path': str(npz_path),
+                    'sample_key': npz_path.stem,
+                    'pdb_id': str(data['pdb_id']),
+                    'chain_a': str(data['chain_a']),
+                    'chain_b': str(data['chain_b']),
+                    
+                    # Tier 2: Sequences
+                    'seq_a': seq_a,
+                    'seq_b': seq_b,
+                    'len_a': len(seq_a),
+                    'len_b': len(seq_b),
+                    
+                    # Tier 2: Coordinates
+                    'ca_a': data['ca_a'].astype(np.float32),
+                    'ca_b': data['ca_b'].astype(np.float32),
+                    
+                    # Tier 2: Contact map
+                    'contact_map': data['contact_map'].astype(np.float32),
+                    
+                    # Tier 2: Interface statistics
+                    'n_interface_contacts': int(data['n_interface_contacts']),
+                    'n_interface_res_a': int(data['n_interface_res_a']),
+                    'n_interface_res_b': int(data['n_interface_res_b']),
+                }
                 
-                samples.append({
-                    "npz_path": str(npz_path),
-                    "sample_key": stem,
-                    "n_contacts": n_contacts
-                })
-
-            except Exception as e:
+                # Optional: Distance map
+                if 'distance_map' in data:
+                    sample['distance_map'] = data['distance_map'].astype(np.float32)
+                
+                # Optional: Interface residue masks
+                if 'interface_res_mask_a' in data:
+                    sample['interface_res_mask_a'] = data['interface_res_mask_a'].astype(np.float32)
+                if 'interface_res_mask_b' in data:
+                    sample['interface_res_mask_b'] = data['interface_res_mask_b'].astype(np.float32)
+                
+                # Tier 1: Global energies
+                for key in ['E_complex', 'E_receptor', 'E_ligand', 'E_bind']:
+                    if key in data:
+                        sample[key] = float(data[key])
+                    else:
+                        sample[key] = 0.0
+                
+                # Tier 2 derived: Normalized energies
+                for key in ['E_bind_per_contact', 'E_bind_per_residue', 'E_complex_per_len']:
+                    if key in data:
+                        sample[key] = float(data[key])
+                    else:
+                        sample[key] = 0.0
+                
+                # Tier 3: Energy terms (optional)
+                if self.include_tier3 and 'energy_terms_json' in data:
+                    try:
+                        sample['energy_terms'] = json.loads(str(data['energy_terms_json']))
+                    except json.JSONDecodeError:
+                        sample['energy_terms'] = {}
+                
+                samples.append(sample)
+                
+            except (KeyError, ValueError) as e:
+                skipped_missing += 1
                 if self.verbose:
-                    print(f"Warning: Failed to load {npz_path}: {e}")
-                continue
-
+                    print(f"[WARN] Skipping {npz_path.name}: {e}")
+        
+        if self.verbose:
+            print(f"[PPIDataset] Skipped {skipped_length} (too long), {skipped_missing} (missing data)")
+        
         return samples
-
+    
     def __len__(self) -> int:
         return len(self.samples)
-
+    
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        """
-        返回一个 PPI 样本。
-        
-        Returns:
-            {
-                'seq_a': [L_a] 氨基酸索引 (或 [L_a, vocab_size] one-hot)
-                'seq_b': [L_b] 氨基酸索引 (或 [L_b, vocab_size] one-hot)
-                'coords_a': [L_a, 3] Cα 坐标
-                'coords_b': [L_b, 3] Cα 坐标
-                'contact_map': [L_a, L_b] 接触图
-                'distance_map': [L_a, L_b] 距离矩阵 (从坐标计算)
-                'mask_a': [L_a] 有效残基掩码
-                'mask_b': [L_b] 有效残基掩码
-                'binding_energy': scalar
-                'n_contacts': scalar
-                'sample_key': str
-            }
-        """
         sample = self.samples[idx]
-        data = np.load(sample["npz_path"], allow_pickle=True)
-
-        # 1. 序列
-        seq_a = str(data["seq_a"])
-        seq_b = str(data["seq_b"])
         
-        # 截断
-        seq_a = seq_a[:self.max_length]
-        seq_b = seq_b[:self.max_length]
-        L_a, L_b = len(seq_a), len(seq_b)
-
-        # 编码
-        if self.use_one_hot:
-            seq_a_enc = one_hot_encode(seq_a)
-            seq_b_enc = one_hot_encode(seq_b)
+        # Convert sequences to indices
+        seq_a_idx = torch.tensor([AA_TO_IDX.get(aa, AA_TO_IDX['X']) for aa in sample['seq_a']], dtype=torch.long)
+        seq_b_idx = torch.tensor([AA_TO_IDX.get(aa, AA_TO_IDX['X']) for aa in sample['seq_b']], dtype=torch.long)
+        
+        # Coordinates
+        ca_a = torch.from_numpy(sample['ca_a'])
+        ca_b = torch.from_numpy(sample['ca_b'])
+        
+        # Contact map
+        contact_map = torch.from_numpy(sample['contact_map'])
+        
+        # Distance map (compute if not available)
+        if 'distance_map' in sample:
+            distance_map = torch.from_numpy(sample['distance_map'])
         else:
-            seq_a_enc = encode_sequence(seq_a)
-            seq_b_enc = encode_sequence(seq_b)
-
-        # 2. 坐标 (支持两种键名: coords_a/coords_b 或 ca_a/ca_b)
-        coords_key_a = "coords_a" if "coords_a" in data else "ca_a"
-        coords_key_b = "coords_b" if "coords_b" in data else "ca_b"
-        coords_a = data[coords_key_a][:L_a].astype(np.float32)
-        coords_b = data[coords_key_b][:L_b].astype(np.float32)
-
-        # 3. 接触图
-        contact_map = data["contact_map"][:L_a, :L_b].astype(np.float32)
-
-        # 4. 距离矩阵 (从坐标计算)
-        distance_map = self._compute_distance_map(coords_a, coords_b)
-
-        # 5. 掩码
-        mask_a = torch.ones(L_a, dtype=torch.long)
-        mask_b = torch.ones(L_b, dtype=torch.long)
-
-        # 6. 能量
-        sample_key = sample["sample_key"]
-        binding_energy = self.energy_cache.get(sample_key, 0.0)
+            diff = ca_a[:, None, :] - ca_b[None, :, :]
+            distance_map = torch.sqrt((diff ** 2).sum(-1))
         
-        # 尝试只用 pdb_id
-        if binding_energy == 0.0:
-            pdb_id = sample_key.split("_")[0] if "_" in sample_key else sample_key
-            binding_energy = self.energy_cache.get(pdb_id, 0.0)
-
+        # Masks (1 = valid, 0 = padding)
+        mask_a = torch.ones(len(seq_a_idx), dtype=torch.float32)
+        mask_b = torch.ones(len(seq_b_idx), dtype=torch.float32)
+        
+        # Interface residue masks
+        if 'interface_res_mask_a' in sample:
+            interface_mask_a = torch.from_numpy(sample['interface_res_mask_a'])
+        else:
+            interface_mask_a = (contact_map.sum(dim=1) > 0).float()
+        
+        if 'interface_res_mask_b' in sample:
+            interface_mask_b = torch.from_numpy(sample['interface_res_mask_b'])
+        else:
+            interface_mask_b = (contact_map.sum(dim=0) > 0).float()
+        
+        # Energy labels
+        energy_dict = {}
+        for key in self.energy_targets:
+            if key in sample:
+                energy_dict[key] = torch.tensor(sample[key], dtype=torch.float32)
+        
         return {
-            "seq_a": seq_a_enc,
-            "seq_b": seq_b_enc,
-            "coords_a": torch.from_numpy(coords_a),
-            "coords_b": torch.from_numpy(coords_b),
-            "contact_map": torch.from_numpy(contact_map),
-            "distance_map": torch.from_numpy(distance_map),
-            "mask_a": mask_a,
-            "mask_b": mask_b,
-            "binding_energy": torch.tensor(binding_energy, dtype=torch.float32),
-            "n_contacts": torch.tensor(sample["n_contacts"], dtype=torch.long),
-            "sample_key": sample_key
+            'sample_key': sample['sample_key'],
+            
+            # Sequences
+            'seq_a': seq_a_idx,
+            'seq_b': seq_b_idx,
+            
+            # Coordinates
+            'ca_a': ca_a,
+            'ca_b': ca_b,
+            
+            # Maps
+            'contact_map': contact_map,
+            'distance_map': distance_map,
+            
+            # Masks
+            'mask_a': mask_a,
+            'mask_b': mask_b,
+            'interface_mask_a': interface_mask_a,
+            'interface_mask_b': interface_mask_b,
+            
+            # Interface stats
+            'n_interface_contacts': torch.tensor(sample['n_interface_contacts'], dtype=torch.long),
+            'n_interface_res_a': torch.tensor(sample['n_interface_res_a'], dtype=torch.long),
+            'n_interface_res_b': torch.tensor(sample['n_interface_res_b'], dtype=torch.long),
+            
+            # Energy labels (Tier 1 + Tier 2 derived)
+            **energy_dict,
         }
 
-    def _compute_distance_map(
-        self, 
-        coords_a: np.ndarray, 
-        coords_b: np.ndarray
-    ) -> np.ndarray:
-        """计算链间距离矩阵 [L_a, L_b]。"""
-        # coords_a: [L_a, 3], coords_b: [L_b, 3]
-        diff = coords_a[:, None, :] - coords_b[None, :, :]  # [L_a, L_b, 3]
-        dist = np.sqrt((diff ** 2).sum(axis=-1))  # [L_a, L_b]
-        return dist.astype(np.float32)
-
-
-# ============================================================================
-# Collate Function
-# ============================================================================
 
 def collate_ppi_batch(batch: List[Dict]) -> Dict[str, torch.Tensor]:
     """
-    批处理变长 PPI 样本，支持不对称链长度。
+    Collate batch with padding for variable-length structures.
     
-    Padding 策略:
-    - seq_a/mask_a/coords_a: pad 到 batch 内最大 L_a
-    - seq_b/mask_b/coords_b: pad 到 batch 内最大 L_b
-    - contact_map/distance_map: pad 到 [max_L_a, max_L_b]
+    Also prepares merged inputs for Evoformer-style models:
+    - merged_seq: [B, L_a + L_b] concatenated sequences
+    - merged_mask: [B, L_a + L_b] attention mask
+    - pair_type: [B, L_a + L_b, L_a + L_b] pair type IDs
+        - 0: intra-A
+        - 1: intra-B  
+        - 2: inter-AB
     """
     B = len(batch)
+    max_len_a = max(item['seq_a'].size(0) for item in batch)
+    max_len_b = max(item['seq_b'].size(0) for item in batch)
+    max_len_merged = max_len_a + max_len_b
     
-    # 找最大长度
-    max_L_a = max(item["mask_a"].size(0) for item in batch)
-    max_L_b = max(item["mask_b"].size(0) for item in batch)
-
-    # 判断是否 one-hot
-    is_one_hot = batch[0]["seq_a"].dim() == 2
+    # Initialize padded tensors
+    seq_a_batch = torch.full((B, max_len_a), PAD_IDX, dtype=torch.long)
+    seq_b_batch = torch.full((B, max_len_b), PAD_IDX, dtype=torch.long)
+    ca_a_batch = torch.zeros(B, max_len_a, 3)
+    ca_b_batch = torch.zeros(B, max_len_b, 3)
+    contact_map_batch = torch.zeros(B, max_len_a, max_len_b)
+    distance_map_batch = torch.zeros(B, max_len_a, max_len_b)
+    mask_a_batch = torch.zeros(B, max_len_a)
+    mask_b_batch = torch.zeros(B, max_len_b)
+    interface_mask_a_batch = torch.zeros(B, max_len_a)
+    interface_mask_b_batch = torch.zeros(B, max_len_b)
     
-    if is_one_hot:
-        vocab_size = batch[0]["seq_a"].size(1)
-        seq_a_batch = torch.zeros(B, max_L_a, vocab_size)
-        seq_b_batch = torch.zeros(B, max_L_b, vocab_size)
-    else:
-        seq_a_batch = torch.full((B, max_L_a), PAD_IDX, dtype=torch.long)
-        seq_b_batch = torch.full((B, max_L_b), PAD_IDX, dtype=torch.long)
-
-    coords_a_batch = torch.zeros(B, max_L_a, 3)
-    coords_b_batch = torch.zeros(B, max_L_b, 3)
-    contact_batch = torch.zeros(B, max_L_a, max_L_b)
-    distance_batch = torch.zeros(B, max_L_a, max_L_b)
-    mask_a_batch = torch.zeros(B, max_L_a, dtype=torch.long)
-    mask_b_batch = torch.zeros(B, max_L_b, dtype=torch.long)
-    energy_batch = torch.zeros(B)
+    # Interface stats
     n_contacts_batch = torch.zeros(B, dtype=torch.long)
+    n_int_res_a_batch = torch.zeros(B, dtype=torch.long)
+    n_int_res_b_batch = torch.zeros(B, dtype=torch.long)
+    
+    # Merged tensors for Evoformer
+    merged_seq_batch = torch.full((B, max_len_merged), PAD_IDX, dtype=torch.long)
+    merged_mask_batch = torch.zeros(B, max_len_merged)
+    pair_type_batch = torch.zeros(B, max_len_merged, max_len_merged, dtype=torch.long)
+    
+    # Energy labels
+    energy_keys = ['E_bind', 'E_complex', 'E_receptor', 'E_ligand',
+                   'E_bind_per_contact', 'E_bind_per_residue', 'E_complex_per_len']
+    energy_batches = {k: torch.zeros(B) for k in energy_keys}
+    
     sample_keys = []
-
+    
     for i, item in enumerate(batch):
-        L_a = item["mask_a"].size(0)
-        L_b = item["mask_b"].size(0)
-
-        seq_a_batch[i, :L_a] = item["seq_a"]
-        seq_b_batch[i, :L_b] = item["seq_b"]
-        coords_a_batch[i, :L_a] = item["coords_a"]
-        coords_b_batch[i, :L_b] = item["coords_b"]
-        contact_batch[i, :L_a, :L_b] = item["contact_map"]
-        distance_batch[i, :L_a, :L_b] = item["distance_map"]
-        mask_a_batch[i, :L_a] = item["mask_a"]
-        mask_b_batch[i, :L_b] = item["mask_b"]
-        energy_batch[i] = item["binding_energy"]
-        n_contacts_batch[i] = item["n_contacts"]
-        sample_keys.append(item["sample_key"])
-
+        L_a = item['seq_a'].size(0)
+        L_b = item['seq_b'].size(0)
+        
+        # Fill individual chain tensors
+        seq_a_batch[i, :L_a] = item['seq_a']
+        seq_b_batch[i, :L_b] = item['seq_b']
+        ca_a_batch[i, :L_a] = item['ca_a']
+        ca_b_batch[i, :L_b] = item['ca_b']
+        contact_map_batch[i, :L_a, :L_b] = item['contact_map']
+        distance_map_batch[i, :L_a, :L_b] = item['distance_map']
+        mask_a_batch[i, :L_a] = item['mask_a']
+        mask_b_batch[i, :L_b] = item['mask_b']
+        interface_mask_a_batch[i, :L_a] = item['interface_mask_a']
+        interface_mask_b_batch[i, :L_b] = item['interface_mask_b']
+        
+        n_contacts_batch[i] = item['n_interface_contacts']
+        n_int_res_a_batch[i] = item['n_interface_res_a']
+        n_int_res_b_batch[i] = item['n_interface_res_b']
+        
+        sample_keys.append(item['sample_key'])
+        
+        # Energy labels
+        for k in energy_keys:
+            if k in item:
+                energy_batches[k][i] = item[k]
+        
+        # Build merged tensors
+        merged_seq_batch[i, :L_a] = item['seq_a']
+        merged_seq_batch[i, L_a:L_a + L_b] = item['seq_b']
+        merged_mask_batch[i, :L_a + L_b] = 1.0
+        
+        # Pair type: 0=intra-A, 1=intra-B, 2=inter-AB
+        pair_type_batch[i, :L_a, :L_a] = 0  # intra-A
+        pair_type_batch[i, L_a:L_a + L_b, L_a:L_a + L_b] = 1  # intra-B
+        pair_type_batch[i, :L_a, L_a:L_a + L_b] = 2  # inter-AB
+        pair_type_batch[i, L_a:L_a + L_b, :L_a] = 2  # inter-BA (symmetric)
+    
     return {
-        "seq_a": seq_a_batch,
-        "seq_b": seq_b_batch,
-        "coords_a": coords_a_batch,
-        "coords_b": coords_b_batch,
-        "contact_map": contact_batch,
-        "distance_map": distance_batch,
-        "mask_a": mask_a_batch,
-        "mask_b": mask_b_batch,
-        "binding_energy": energy_batch,
-        "n_contacts": n_contacts_batch,
-        "sample_keys": sample_keys
+        'sample_keys': sample_keys,
+        
+        # Individual chain data
+        'seq_a': seq_a_batch,
+        'seq_b': seq_b_batch,
+        'ca_a': ca_a_batch,
+        'ca_b': ca_b_batch,
+        'contact_map': contact_map_batch,
+        'distance_map': distance_map_batch,
+        'mask_a': mask_a_batch,
+        'mask_b': mask_b_batch,
+        'interface_mask_a': interface_mask_a_batch,
+        'interface_mask_b': interface_mask_b_batch,
+        
+        # Interface stats
+        'n_interface_contacts': n_contacts_batch,
+        'n_interface_res_a': n_int_res_a_batch,
+        'n_interface_res_b': n_int_res_b_batch,
+        
+        # Merged for Evoformer
+        'merged_seq': merged_seq_batch,
+        'merged_mask': merged_mask_batch,
+        'pair_type': pair_type_batch,
+        
+        # Energy labels
+        **energy_batches,
     }
 
 
-# ============================================================================
-# 便捷函数: 合并双链为单序列 (用于 Evoformer)
-# ============================================================================
-
-def merge_chains_for_evoformer(batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-    """
-    将双链批次合并为单序列格式，适配 Evoformer 输入。
-    
-    合并策略:
-    - seq: [seq_a, <SEP>, seq_b]
-    - coords: [coords_a, zeros, coords_b]
-    - 生成 chain_mask 区分两条链
-    - 生成 pair_type 标记链内/链间
-    
-    Returns:
-        {
-            'seq': [B, L_total] 合并序列
-            'coords': [B, L_total, 3] 合并坐标
-            'mask': [B, L_total] 有效掩码
-            'chain_mask': [B, L_total] 链标识 (0=A, 1=sep, 2=B)
-            'contact_map': [B, L_total, L_total] 全接触图
-            'distance_map': [B, L_total, L_total] 全距离图
-            'pair_type': [B, L_total, L_total] 0=intra-A, 1=inter, 2=intra-B
-            'binding_energy': [B]
-            'L_a': [B] 链 A 长度 (不含 SEP)
-            'L_b': [B] 链 B 长度
-        }
-    """
-    B = batch["seq_a"].size(0)
-    L_a = batch["mask_a"].size(1)
-    L_b = batch["mask_b"].size(1)
-    L_total = L_a + 1 + L_b  # +1 for SEP token
-
-    is_one_hot = batch["seq_a"].dim() == 3
-    
-    if is_one_hot:
-        vocab_size = batch["seq_a"].size(2)
-        seq_merged = torch.zeros(B, L_total, vocab_size)
-        # SEP token 用 index 21 (gap)
-        sep_onehot = torch.zeros(vocab_size)
-        sep_onehot[21] = 1.0
-    else:
-        seq_merged = torch.full((B, L_total), PAD_IDX, dtype=torch.long)
-        SEP_IDX = 21  # 使用 gap 作为 SEP
-
-    coords_merged = torch.zeros(B, L_total, 3)
-    mask_merged = torch.zeros(B, L_total, dtype=torch.long)
-    chain_mask = torch.zeros(B, L_total, dtype=torch.long)
-    
-    # 全尺寸接触/距离图
-    contact_full = torch.zeros(B, L_total, L_total)
-    distance_full = torch.full((B, L_total, L_total), 999.0)  # 大距离表示无接触
-    pair_type = torch.zeros(B, L_total, L_total, dtype=torch.long)
-
-    for b in range(B):
-        la = batch["mask_a"][b].sum().item()
-        lb = batch["mask_b"][b].sum().item()
-        
-        # 序列
-        if is_one_hot:
-            seq_merged[b, :la] = batch["seq_a"][b, :la]
-            seq_merged[b, la] = sep_onehot
-            seq_merged[b, la+1:la+1+lb] = batch["seq_b"][b, :lb]
-        else:
-            seq_merged[b, :la] = batch["seq_a"][b, :la]
-            seq_merged[b, la] = SEP_IDX
-            seq_merged[b, la+1:la+1+lb] = batch["seq_b"][b, :lb]
-
-        # 坐标
-        coords_merged[b, :la] = batch["coords_a"][b, :la]
-        # SEP 位置保持 0
-        coords_merged[b, la+1:la+1+lb] = batch["coords_b"][b, :lb]
-
-        # 掩码
-        mask_merged[b, :la] = 1
-        mask_merged[b, la] = 1  # SEP 也算有效
-        mask_merged[b, la+1:la+1+lb] = 1
-
-        # 链标识
-        chain_mask[b, :la] = 0  # Chain A
-        chain_mask[b, la] = 1    # SEP
-        chain_mask[b, la+1:la+1+lb] = 2  # Chain B
-
-        # 接触图 (链间部分)
-        inter_contact = batch["contact_map"][b, :la, :lb]
-        contact_full[b, :la, la+1:la+1+lb] = inter_contact
-        contact_full[b, la+1:la+1+lb, :la] = inter_contact.T
-
-        # 距离图
-        inter_dist = batch["distance_map"][b, :la, :lb]
-        distance_full[b, :la, la+1:la+1+lb] = inter_dist
-        distance_full[b, la+1:la+1+lb, :la] = inter_dist.T
-        
-        # 链内距离 (自身为 0)
-        for i in range(la):
-            distance_full[b, i, i] = 0.0
-        for i in range(lb):
-            distance_full[b, la+1+i, la+1+i] = 0.0
-
-        # Pair type: 0=intra-A, 1=inter, 2=intra-B
-        pair_type[b, :la, :la] = 0  # intra-A
-        pair_type[b, la+1:la+1+lb, la+1:la+1+lb] = 2  # intra-B
-        pair_type[b, :la, la+1:la+1+lb] = 1  # inter A→B
-        pair_type[b, la+1:la+1+lb, :la] = 1  # inter B→A
-
-    return {
-        "seq": seq_merged,
-        "coords": coords_merged,
-        "mask": mask_merged,
-        "chain_mask": chain_mask,
-        "contact_map": contact_full,
-        "distance_map": distance_full,
-        "pair_type": pair_type,
-        "binding_energy": batch["binding_energy"],
-        "L_a": batch["mask_a"].sum(dim=1),
-        "L_b": batch["mask_b"].sum(dim=1)
-    }
-
-
-# ============================================================================
-# 测试
-# ============================================================================
+# =============================================================================
+# Test
+# =============================================================================
 
 if __name__ == "__main__":
     import argparse
-    from torch.utils.data import DataLoader
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--npz_dir", type=str, 
-                        default="flowtcr_fold/data/pdb_structures/processed")
-    parser.add_argument("--energy_cache", type=str, 
-                        default="flowtcr_fold/data/energy_cache.jsonl")
-    parser.add_argument("--batch_size", type=int, default=2)
-    args = parser.parse_args()
-
+    
+    ap = argparse.ArgumentParser(description="Test PPIDataset loading.")
+    ap.add_argument("--data_dir", type=str, default="flowtcr_fold/data/ppi_merged",
+                    help="Directory containing merged .npz files.")
+    ap.add_argument("--batch_size", type=int, default=4, help="Batch size.")
+    args = ap.parse_args()
+    
     print("=" * 60)
     print("Testing PPIDataset")
     print("=" * 60)
-
+    
     try:
         dataset = PPIDataset(
-            npz_dir=args.npz_dir,
-            energy_cache=args.energy_cache if os.path.exists(args.energy_cache) else None,
+            data_dir=args.data_dir,
+            max_length=512,
+            energy_targets=['E_bind', 'E_complex', 'E_receptor', 'E_ligand',
+                          'E_bind_per_contact', 'E_bind_per_residue'],
             verbose=True
         )
-
-        if len(dataset) == 0:
-            print("\nNo samples found. Make sure to run preprocess_ppi_pairs.py first.")
-        else:
-            print(f"\nDataset size: {len(dataset)}")
-            
-            # 测试单样本
+        
+        print(f"\nDataset size: {len(dataset)}")
+        
+        if len(dataset) > 0:
+            # Test single sample
             sample = dataset[0]
             print(f"\nSample keys: {list(sample.keys())}")
             print(f"  seq_a shape: {sample['seq_a'].shape}")
             print(f"  seq_b shape: {sample['seq_b'].shape}")
-            print(f"  coords_a shape: {sample['coords_a'].shape}")
-            print(f"  coords_b shape: {sample['coords_b'].shape}")
+            print(f"  ca_a shape: {sample['ca_a'].shape}")
             print(f"  contact_map shape: {sample['contact_map'].shape}")
-            print(f"  binding_energy: {sample['binding_energy'].item():.2f}")
-            print(f"  n_contacts: {sample['n_contacts'].item()}")
-            print(f"  sample_key: {sample['sample_key']}")
-
-            # 测试 DataLoader
+            print(f"  E_bind: {sample.get('E_bind', 'N/A')}")
+            print(f"  E_bind_per_contact: {sample.get('E_bind_per_contact', 'N/A')}")
+            print(f"  n_interface_contacts: {sample['n_interface_contacts'].item()}")
+            
+            # Test DataLoader
             loader = DataLoader(
-                dataset, 
-                batch_size=min(args.batch_size, len(dataset)),
+                dataset,
+                batch_size=args.batch_size,
+                shuffle=False,
                 collate_fn=collate_ppi_batch
             )
             
             batch = next(iter(loader))
             print(f"\nBatch keys: {list(batch.keys())}")
-            print(f"  seq_a batch shape: {batch['seq_a'].shape}")
-            print(f"  contact_map batch shape: {batch['contact_map'].shape}")
-
-            # 测试合并函数
-            merged = merge_chains_for_evoformer(batch)
-            print(f"\nMerged for Evoformer:")
-            print(f"  seq shape: {merged['seq'].shape}")
-            print(f"  contact_map shape: {merged['contact_map'].shape}")
-            print(f"  pair_type shape: {merged['pair_type'].shape}")
-
-            print("\n✅ PPIDataset test passed!")
-
+            print(f"  seq_a batch: {batch['seq_a'].shape}")
+            print(f"  contact_map batch: {batch['contact_map'].shape}")
+            print(f"  merged_seq: {batch['merged_seq'].shape}")
+            print(f"  pair_type: {batch['pair_type'].shape}")
+            print(f"  E_bind: {batch['E_bind']}")
+            
+        print("\n✅ PPIDataset test passed!")
+        
     except Exception as e:
         print(f"\n❌ Error: {e}")
         import traceback
         traceback.print_exc()
-

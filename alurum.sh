@@ -23,6 +23,12 @@ then excute the above script:
 use "squeue -u zwlexa" to find available nodes
 zgpuA403
 
+CPUS(A/I/O/T)
+A = Allocated 已被占用
+I = Idle 空闲
+O = Other（down, drain 等）
+T = Total 总 CPU 数（A + I + O）
+
 
 nvm use node
 npm install -g @anthropic-ai/claude-code

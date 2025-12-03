@@ -666,6 +666,11 @@ def gradient_informed_proposal(self, current_seq, scaffold, pmhc):
 - [x] 预处理脚本 `process_pdb/preprocess_ppi_pairs.py` ✅
 - [x] EvoEF2 批处理脚本 `process_pdb/compute_evoef2_batch.py` ✅
 - [x] 小样本验证通过（20 ID → 21 PPI 样本 .npz）✅
+- [x] **compute_evoef2_batch 与 .npz 对齐**：改为链对逐一计算，输出 `sample_key={pdb}_{chainA}{chainB}` + `binding_energy`，匹配 PPIDataset
+- [x] Tier 2 接口统计扩充（n_interface_res，接口掩码；interface_sasa 预留占位 -1.0）并写入 .npz
+- [x] Merge 脚本：融合结构 .npz + 能量 JSONL 为统一训练样本（输出 merged .npz，含派生能量）
+- [x] Tier 2 归一化能量派生（E_bind_per_contact / per_residue / per_area* / per_len；*仅在 interface_sasa>0 时）
+- [ ] （可选）Tier 3 per-residue 能量字段预留
 - [ ] 全量 PDB 下载 (~40k 结构)
 - [ ] EvoEF2 可执行文件放置到 `flowtcr_fold/tools/EvoEF2/`
 - [ ] 全量 EvoEF2 能量计算
@@ -894,6 +899,22 @@ class EnergyGuidedMC:
 - `train_with_energy.py`: 训练/打印日志；每 50 epoch 存 ckpt，结束存 final pt；无文件日志/验证集，数据特征仅 CA/CB 距离/接触 + 占位 s/z，接口/链信息未对齐 `.npz`。
 - 待统一：1）能量缓存格式（JSONL vs json）；2）链拆分策略；3）数据源（原始 PDB vs 预处理 `.npz`）；4）s/z/chain_type 的真实编码。
 
+### 2025-12-03 22:13 (+08) (Phase0 缓存对齐)
+- `compute_evoef2_batch.py`：改为链对逐一计算（pairwise），输出 `sample_key={pdb}_{chainA}{chainB}` 与 `.npz` 命名一致，并显式写入 `binding_energy` 字段；追加模式按 `sample_key` 跳过。
+- 解决能量缓存无法匹配 `PPIDataset`（默认 key=`pdb_chainAchainB`）导致 `binding_energy=0` 的问题。
+
+### 2025-12-03 22:30 (+08) (Tier1+2+3 pipeline 对齐检查)
+- 现状：已完成 Tier 1 + 部分 Tier 3（complex / receptor / ligand 能量项）写入 JSONL，并按链对键名对齐；但 Tier 2 接口统计（n_interface_res, interface_sasa）、能量归一化（E_bind_per_contact/per_residue/per_area）和结构/能量合并样本尚未实现；per-residue 能量未生成。
+- 待办：
+  1) 在 `preprocess_ppi_pairs.py` / `.npz` 中补充接口统计字段（接口残基数、SASA 可选）。
+  2) 新增 merge 脚本（结构 .npz + energy JSONL → 统一样本），派生归一化能量指标。
+  3) 如需 per-residue 能量，再在 runner 或后处理阶段解析/预留字段。
+
+### 2025-12-03 22:50 (+08) (Tier1+2+3 pipeline 进展)
+- `preprocess_ppi_pairs.py`：接口掩码/接口残基数已输出，并预留 `interface_sasa=-1.0` 占位。
+- 新增 `process_pdb/merge_structure_energy.py`：合并结构 .npz 与能量 JSONL，生成 merged .npz，包含 E_bind/E_complex/E_receptor/E_ligand 及派生归一化指标（E_bind_per_contact / per_residue / per_area* / per_len，*当 interface_sasa>0 时）。
+- 缺口：接口 SASA 仍为占位，per-residue 能量未生成；如需，后续需额外工具/解析补全。
+
 ### 2025-12-02 (Session 2: EvoEF2 集成 + PPIDataset)
 
 #### 已完成 ✅
@@ -964,9 +985,15 @@ python flowtcr_fold/TCRFold_Light/process_pdb/preprocess_ppi_pairs.py \
     --out_dir flowtcr_fold/data/pdb_structures/processed \
     --cutoff 8.0 --min_len 30 --min_contacts 10
 
-# Step 0.3: EvoEF2 能量计算 (需先放置 EvoEF2)
+# Step 0.3: EvoEF2 能量计算 (需先放置 EvoEF2，默认链对逐一)
 python flowtcr_fold/TCRFold_Light/process_pdb/compute_evoef2_batch.py \
     --pdb_dir flowtcr_fold/data/pdb_structures/raw \
     --output flowtcr_fold/data/energy_cache.jsonl \
-    --repair
+    --pairwise --append --repair
+
+# Step 0.4: 结构+能量合并（生成包含派生能量的 merged .npz）
+python flowtcr_fold/TCRFold_Light/process_pdb/merge_structure_energy.py \
+    --npz_dir flowtcr_fold/data/pdb_structures/processed \
+    --energy_json flowtcr_fold/data/energy_cache.jsonl \
+    --out_dir flowtcr_fold/data/pdb_structures/merged
 ```

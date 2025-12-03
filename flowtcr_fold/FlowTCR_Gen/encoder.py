@@ -1,7 +1,7 @@
 """
 FlowTCR-Gen Encoder: Adapts psi_model components for topology-aware conditioning.
 
-Key components (reused from psi_model):
+Key components:
 - CollapseAwareEmbedding: Collapse Token (ψ) + Hierarchical Pair IDs
 - SequenceProfileEvoformer: Evoformer with sequence profile attention
 
@@ -187,21 +187,9 @@ class CollapseAwareEmbedding(nn.Module):
     ) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, Tuple[int, int]]]:
         """
         Forward pass for a single sample.
-        
-        Args:
-            cdr3_xt: [L_cdr3, vocab] Flow intermediate state
-            cdr3_mask: [L_cdr3] 1 for valid, 0 for pad
-            conditioning_seqs: Dict of conditioning one-hot sequences
-            conditioning_masks: Dict of conditioning masks
-            conditioning_info: List of conditioning regions to use
-        
-        Returns:
-            s: [L_total, s_dim] sequence representation
-            z: [L_total, L_total, z_dim] pair representation
-            idx_map: Dict mapping region names to (start, end) indices
         """
         s_list = []
-        idx_map = {}
+        idx_map: Dict[str, Tuple[int, int]] = {}
         offset = 0
         
         # 1. Add collapse token
@@ -211,7 +199,7 @@ class CollapseAwareEmbedding(nn.Module):
             offset = 1
         
         # 2. Add CDR3 (only valid positions, masked by cdr3_mask)
-        L_cdr3 = int(cdr3_mask.sum().item())  # actual length
+        L_cdr3 = int(cdr3_mask.sum().item())
         if L_cdr3 > 0:
             cdr3_valid = cdr3_xt[:L_cdr3]  # [L_cdr3_valid, vocab]
             cdr3_idx = torch.arange(L_cdr3, device=device)
@@ -262,10 +250,10 @@ class CollapseAwareEmbedding(nn.Module):
         else:
             s = torch.cat(s_list, dim=0)  # [L_total, s_dim]
         
-        L = s.shape[0]
+        L_total = s.shape[0]
         
         # Create pair embeddings
-        pair_id = self.create_hierarchical_pairs(L, idx_map, device)
+        pair_id = self.create_hierarchical_pairs(L_total, idx_map, device)
         z = torch.cat([
             self.pair_embed_lvl1(F.one_hot(pair_id // 4, 8).float()),
             self.pair_embed_lvl2(F.one_hot(pair_id % 4, 4).float())
@@ -283,34 +271,18 @@ class CollapseAwareEmbedding(nn.Module):
     ) -> Tuple[List[torch.Tensor], List[torch.Tensor], List[Dict[str, Tuple[int, int]]]]:
         """
         Batched forward pass with per-sample conditioning.
-        
-        Args:
-            cdr3_xt: [B, L_cdr3, vocab] Flow intermediate state
-            cdr3_mask: [B, L_cdr3] 1 for valid, 0 for pad
-            conditioning_seqs: Dict of conditioning one-hot sequences [B, L, vocab]
-            conditioning_masks: Dict of conditioning masks [B, L]
-            conditioning_info: List of conditioning regions to use
-        
-        Returns:
-            s_list: List of [L_i, s_dim] per sample (variable length)
-            z_list: List of [L_i, L_i, z_dim] per sample
-            idx_maps: List of Dict per sample
+        Returns lists because sequence lengths vary per sample.
         """
         device = cdr3_xt.device
         B = cdr3_xt.shape[0]
         
-        s_list = []
-        z_list = []
-        idx_maps = []
+        s_list: List[torch.Tensor] = []
+        z_list: List[torch.Tensor] = []
+        idx_maps: List[Dict[str, Tuple[int, int]]] = []
         
         for i in range(B):
-            # Extract per-sample conditioning
-            sample_cond_seqs = {
-                k: v[i] for k, v in conditioning_seqs.items()
-            }
-            sample_cond_masks = {
-                k: v[i] for k, v in conditioning_masks.items()
-            }
+            sample_cond_seqs = {k: v[i] for k, v in conditioning_seqs.items()}
+            sample_cond_masks = {k: v[i] for k, v in conditioning_masks.items()}
             
             s, z, idx_map = self.forward_single(
                 cdr3_xt=cdr3_xt[i],
@@ -381,12 +353,6 @@ class SequenceProfileAttention(nn.Module):
         Args:
             s: [L, s_dim] sequence representation
             z: [L, L, z_dim] pair representation (unused in this lightweight version)
-        
-        Returns:
-            s: Updated sequence representation
-            z: Pair representation (passthrough)
-            attn_weights: Attention weights for monitoring
-            profile_info: Profile entropy and guidance info
         """
         L, D = s.shape
         s_ln = F.layer_norm(s, (D,))
@@ -407,10 +373,14 @@ class SequenceProfileAttention(nn.Module):
         if self.use_collapse and L > 1:
             # Low entropy = high attention weight
             entropy_guidance = -position_entropy[:L] * self.entropy_weight
-            position_bias = self.collapse_position_bias[:L]
+            # Extend position bias if sequence exceeds preset length
+            bias_len = self.collapse_position_bias.shape[0]
+            if L > bias_len:
+                extra = self.collapse_position_bias.new_zeros(L - bias_len)
+                position_bias = torch.cat([self.collapse_position_bias, extra], dim=0)
+            else:
+                position_bias = self.collapse_position_bias[:L]
             total_bias = entropy_guidance + position_bias
-            
-            # Apply to collapse token (position 0) across all heads
             scores[:, 0, :L] = scores[:, 0, :L] + total_bias.unsqueeze(0)
         
         # Softmax
@@ -448,8 +418,8 @@ class SequenceProfileEvoformer(nn.Module):
             SequenceProfileAttention(s_dim, z_dim, use_collapse=use_collapse)
             for _ in range(n_layers)
         ])
-        self.log_attn = []
-        self.log_profile_info = []
+        self.log_attn: List[torch.Tensor] = []
+        self.log_profile_info: List[Dict] = []
 
     def forward(self, s: torch.Tensor, z: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """Forward through all layers."""
@@ -466,15 +436,8 @@ class SequenceProfileEvoformer(nn.Module):
 
 class FlowTCRGenEncoder(nn.Module):
     """
-    Main encoder for FlowTCR-Gen.
-    
-    Combines:
-    - CollapseAwareEmbedding for input processing
-    - SequenceProfileEvoformer for contextual encoding
-    - Time embedding injection for flow matching
-    
-    This is the topology-aware conditioning encoder that is the
-    main innovation of FlowTCR-Gen (论文主打).
+    Main encoder for FlowTCR-Gen (per-sample conditioning).
+    Combines CollapseAwareEmbedding and SequenceProfileEvoformer.
     """
 
     def __init__(
@@ -551,23 +514,7 @@ class FlowTCRGenEncoder(nn.Module):
     ) -> Tuple[List[torch.Tensor], List[torch.Tensor], List[Dict[str, Tuple[int, int]]]]:
         """
         Encode all inputs for flow matching with per-sample conditioning.
-        
-        Args:
-            cdr3_xt: [B, L_cdr3, vocab] flow intermediate state
-            cdr3_mask: [B, L_cdr3] 1 for valid, 0 for pad
-            t: [B, 1] or [B] time in [0, 1]
-            pep_one_hot: [B, L_pep, vocab] peptide one-hot
-            pep_mask: [B, L_pep] peptide mask
-            mhc_one_hot: [B, L_mhc, vocab] MHC one-hot
-            mhc_mask: [B, L_mhc] MHC mask
-            scaffold_one_hot: Dict of scaffold one-hot [B, L, vocab]
-            scaffold_mask: Dict of scaffold masks [B, L]
-            conditioning_info: List of conditioning regions to use
-        
-        Returns:
-            s_list: List of [L_i, s_dim] per sample
-            z_list: List of [L_i, L_i, z_dim] per sample
-            idx_maps: List of Dict per sample
+        Returns lists because sequence lengths vary per sample.
         """
         if conditioning_info is None:
             conditioning_info = ['pep', 'mhc', 'hv', 'hj', 'lv', 'lj']
@@ -576,8 +523,8 @@ class FlowTCRGenEncoder(nn.Module):
         B = cdr3_xt.shape[0]
         
         # Build conditioning dicts (batched)
-        conditioning_seqs = {}
-        conditioning_masks = {}
+        conditioning_seqs: Dict[str, torch.Tensor] = {}
+        conditioning_masks: Dict[str, torch.Tensor] = {}
         
         if 'pep' in conditioning_info:
             conditioning_seqs['pep'] = pep_one_hot
@@ -605,8 +552,8 @@ class FlowTCRGenEncoder(nn.Module):
         if t.dim() == 1:
             t = t.unsqueeze(-1)  # [B, 1]
         
-        processed_s_list = []
-        processed_z_list = []
+        processed_s_list: List[torch.Tensor] = []
+        processed_z_list: List[torch.Tensor] = []
         
         for i in range(B):
             s = s_list[i]  # [L_i, s_dim]
@@ -629,7 +576,6 @@ class FlowTCRGenEncoder(nn.Module):
         """Extract collapse scalar for model score hook."""
         if not self.use_collapse:
             return torch.tensor(0.0, device=s.device)
-        # First position is collapse token
         collapse_repr = s[0]  # [s_dim]
         return self.collapse_proj(collapse_repr).squeeze()
 
@@ -637,56 +583,3 @@ class FlowTCRGenEncoder(nn.Module):
         """Extract CDR3 region representation."""
         cdr3_start, cdr3_end = idx_map['cdr3']
         return s[cdr3_start:cdr3_end]  # [L_cdr3, s_dim]
-
-
-if __name__ == "__main__":
-    # Quick test
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
-    encoder = FlowTCRGenEncoder(
-        s_dim=128,
-        z_dim=32,
-        n_layers=2,
-        vocab_size=21,
-    ).to(device)
-    
-    # Mock inputs
-    B, L_cdr3, L_pep, L_mhc = 1, 15, 9, 100
-    vocab_size = 21
-    
-    cdr3_xt = torch.randn(L_cdr3, vocab_size, device=device)
-    cdr3_xt = F.softmax(cdr3_xt, dim=-1)  # Soft distribution
-    
-    peptide = F.one_hot(torch.randint(0, vocab_size, (L_pep,), device=device), vocab_size).float()
-    peptide_idx = torch.arange(L_pep, device=device)
-    
-    mhc = F.one_hot(torch.randint(0, vocab_size, (L_mhc,), device=device), vocab_size).float()
-    mhc_idx = torch.arange(L_mhc, device=device)
-    
-    t = torch.tensor([0.5], device=device)
-    
-    scaffold_seqs = {
-        'hv': F.one_hot(torch.randint(0, vocab_size, (30,), device=device), vocab_size).float(),
-    }
-    scaffold_idx = {
-        'hv': torch.arange(30, device=device),
-    }
-    
-    s, z, idx_map = encoder(
-        cdr3_xt=cdr3_xt,
-        t=t,
-        peptide=peptide,
-        peptide_idx=peptide_idx,
-        mhc=mhc,
-        mhc_idx=mhc_idx,
-        scaffold_seqs=scaffold_seqs,
-        scaffold_idx=scaffold_idx,
-        conditioning_info=['pep', 'mhc', 'hv'],
-    )
-    
-    print(f"✅ Encoder test passed!")
-    print(f"  s shape: {s.shape}")
-    print(f"  z shape: {z.shape}")
-    print(f"  idx_map: {idx_map}")
-    print(f"  collapse scalar: {encoder.get_collapse_scalar(s).item():.4f}")
-

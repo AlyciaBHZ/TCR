@@ -278,9 +278,10 @@ class FlowTCRGenEvaluator:
         
         # Perplexity (from flow cost)
         if self.flow_costs:
+            import math
             mean_cost = sum(self.flow_costs) / len(self.flow_costs)
-            # Approximate perplexity as exp(cost)
-            results['perplexity'] = min(mean_cost.__exp__() if mean_cost < 10 else 1e10, 1e10)
+            # Approximate perplexity as exp(cost) with safety clamp
+            results['perplexity'] = min(math.exp(min(mean_cost, 10.0)), 1e10)
         
         return results
 
@@ -376,4 +377,3 @@ if __name__ == "__main__":
     evaluator.add_batch(gen_tokens, tgt_tokens)
     metrics = evaluator.compute_metrics()
     print(f"✅ Evaluator metrics: {metrics}")
-
