@@ -23,11 +23,15 @@
 3) First milestone: train an easy all-PDB protein-protein interaction model for `flowtcr_fold/TCRFold_Light` before heavier tasks.  
 4) Keep outputs/checkpoints under `flowtcr_fold/checkpoints` or `results/`; avoid polluting legacy dirs.
 
-## Current Snapshot (from flowtcr_fold/README)
-- Pipeline: Stage1 scaffold retrieval (Immuno-PLM) → Stage2 CDR3β generation (FlowTCR-Gen, discrete flow matching) → Stage3 structure critique (TCRFold-Light + EvoEF2).
-- Module status: Immuno-PLM ✅ (InfoNCE + cls); FlowTCR-Gen ~40% (needs full conditioning); TCRFold-Light ~75% (EvoEF2 integration present); Physics module ~90%; Inference pipeline ~50%.
+## Current Snapshot (from flowtcr_fold/README, 2025-12-05)
+- Pipeline: Stage1 scaffold retrieval (Immuno-PLM) → Stage2 CDR3β generation (FlowTCR-Gen, Dirichlet flow matching) → Stage3 structure critique (TCRFold-Prophet + EvoEF2).
+- Module status: 
+  - **Immuno-PLM ✅ 90%** (R@10 Avg=93.2%, pMHC vs MHC-only ablation 完成)
+  - **FlowTCR-Gen 🔧 95%** (代码完成 + ODE bug 修复, 待重训验证)
+  - **TCRFold-Prophet 🔄 60%** (Phase 0 ✅ 76,407 PPI 样本, Phase 3A 待训练)
+  - Physics module ~90%; Inference pipeline ~50%.
 - Data fields: peptide, mhc, cdr3_b (required); h_v, h_j, l_v, l_j optional; cdr3_a optional. Scaffold bank built from V/J combos.
-- Conditioning sources to reuse: topology bias + hierarchical pairs from `psi_model/model.py`; Evoformer blocks from legacy `conditioned` where needed.
+- Conditioning sources reused: topology bias + hierarchical pairs from `psi_model/model.py`; Evoformer blocks from legacy `conditioned`.
 
 ## Master Plan v3.1 (aligned)
 - Stage split: Stage1 Immuno-PLM scaffold prior (strong MHC, weak peptide; no CDR3 input to encoder), Stage2 FlowTCR-Gen CDR3β generation (Dirichlet flow + psi_model collapse/hier pairs), Stage3 TCRFold-Prophet structure/energy (Evoformer trunk + EvoEF2 surrogate + MC).
@@ -72,9 +76,9 @@ This window serves as the **Master Planning Window**. Each Stage has its own Imp
 
 | Stage | Implementation Plan | Status |
 |-------|---------------------|--------|
-| Stage 1 | `flowtcr_fold/Immuno_PLM/IMPLEMENTATION_PLAN.md` | ✅ 90% (R@10 88%) |
+| Stage 1 | `flowtcr_fold/Immuno_PLM/IMPLEMENTATION_PLAN.md` | ✅ 90% (R@10 Avg=93.2%) |
 | Stage 2 | `flowtcr_fold/FlowTCR_Gen/IMPLEMENTATION_PLAN.md` | 🔧 95% (Bug Fixed, 待重训) |
-| Stage 3 | `flowtcr_fold/TCRFold_Light/IMPLEMENTATION_PLAN.md` | 🔄 30% |
+| Stage 3 | `flowtcr_fold/TCRFold_Light/IMPLEMENTATION_PLAN.md` | 🔄 60% (Phase 0 ✅ 76,407 样本) |
 
 ### Workflow
 1. **This Window**: Master planning, progress review, cross-stage coordination
@@ -88,18 +92,19 @@ This window serves as the **Master Planning Window**. Each Stage has its own Imp
 - Stage 3 Plan: `flowtcr_fold/TCRFold_Light/IMPLEMENTATION_PLAN.md`
 
 ## Progress Log
-- [x] Stage1 dual-group InfoNCE+BCE wired; Top-K/KL vs freq & MHC-only baselines recorded. ✅ (R@10 88.9%)
+- [x] Stage1 dual-group InfoNCE+BCE wired; Top-K/KL vs freq & MHC-only baselines recorded. ✅ (R@10 Avg=93.2%)
 - [~] Stage2 FlowTCR-Gen baseline: 代码完成 + Bug 修复; 首轮 buggy 训练分析完成; **待重新训练**
+- [x] Stage3 Phase 0 数据管线全量完成: 76,407 PPI 样本 (Tier 1+2+3 完整)
 - [ ] Stage3 Phase 3A/3B PPI pretrain/energy fit completed; checkpoints + EvoEF2 corr logged.
 - [ ] Stage3 Phase 3C TCR-specific finetune done; corr ≥0.7 achieved/assessed.
 - [ ] Pipeline integration: Flow samples → TCRFold-Prophet+E_φ screen → MC (hybrid energy) → EvoEF2 final check; commands + outputs recorded.
 
-### 详细进度 (2025-12-05)
+### 详细进度 (2025-12-05 更新)
 | Stage | 状态 | 关键成果 | 下一步 |
 |-------|------|----------|--------|
-| Stage 1 | ✅ 完成 | R@10=88.9%, pMHC vs MHC-only ablation | 可选探索 |
-| Stage 2 | 🔧 待重训 | 代码完成, ODE bug 修复, 首轮分析完成 | 重新训练 |
-| Stage 3 | 🔄 30% | Phase 0 数据准备中 | PDB/EvoEF2 |
+| Stage 1 | ✅ 完成 | R@10 Avg=93.2%, pMHC vs MHC-only Δ=+0.5% | 可选探索 |
+| Stage 2 | 🔧 待重训 | 代码完成, ODE bug 修复, 首轮分析完成 | 重新训练验证 |
+| Stage 3 | 🔄 60% | **Phase 0 ✅** 76,407 样本, EvoEF2 能量合并 | Phase 3A 模型训练 |
 
 ## Stage-Specific Progress (sync from IMPLEMENTATION_PLAN.md)
 
@@ -109,14 +114,17 @@ This window serves as the **Master Planning Window**. Each Stage has its own Imp
 - [x] Phase 3: Multi-label BCE 实现
 - [x] Phase 4: Top-K/KL 评估指标
 - [x] Phase 5: Baseline 对比
-- [x] **Phase 6 (Ablation)**: pMHC vs MHC-only 完成 (Δ ≈ +0.5%)
-- [x] **Milestone**: R@10 = 88.9% (远超 20% 目标)
+- [x] **Phase 6 (Ablation)**: pMHC vs MHC-only 完成 (Δ ≈ +1.2% HV, +0.9% HJ)
+- [x] **Milestone**: R@10 Avg = 93.2% (远超 20% 目标)
 
-**Latest Results (2025-12-02)**:
-| Mode | R@10 HV | R@10 HJ | R@10 LV | R@10 LJ |
-|------|---------|---------|---------|---------|
-| Normal (pMHC) | 88.9% | 83.3% | 99.8% | 99.9% |
-| Ablation (MHC-only) | 88.1% | 82.9% | 99.7% | 99.8% |
+**Latest Results (2025-12-04 @ Epoch 11-13)**:
+| Mode | R@10 HV | R@10 HJ | R@10 LV | R@10 LJ | R@10 Avg |
+|------|---------|---------|---------|---------|----------|
+| Normal (pMHC) | **89.5%** | **83.7%** | 99.7% | 99.9% | **93.2%** |
+| Ablation (MHC-only) | 88.3% | 82.8% | 99.7% | 99.8% | 92.7% |
+| Frequency Baseline | 39.3% | 74.4% | 33.1% | 23.6% | 42.6% |
+
+**vs Baseline**: HV +50.2%, HJ +9.3%, LV +66.6%, LJ +76.3%
 
 **Exploratory (Stage 1)**:
 - [ ] E1: Allele Sequence Fallback
@@ -164,14 +172,25 @@ This window serves as the **Master Planning Window**. Each Stage has its own Imp
 - [ ] E3: Multi-CDR Generation
 - [ ] E4: Self-Play with Stage 3 Feedback
 
-### Stage 3: TCRFold-Prophet (W6-10)
-- [ ] Phase 0: 数据准备 (PDB + EvoEF2)
-- [ ] Phase 3A: PPI 结构预训练
+### Stage 3: TCRFold-Prophet (W6-10) 🔄 60%
+- [x] **Phase 0: 数据准备** ✅ **全量完成** (2025-12-04)
+  - ✅ PDB 下载: 37,867 结构 (35,398 PDB + 2,469 CIF)
+  - ✅ PPI 预处理: 78,896 .npz (Tier 2 结构特征)
+  - ✅ EvoEF2 能量: 209,826 链对 (Tier 1+3 能量)
+  - ✅ **合并样本: 76,407** (Tier 1+2+3 完整，26 字段)
+  - ✅ PPIDataset 统一数据集类
+- [ ] Phase 3A: PPI 结构预训练 → **数据已就绪，待模型训练**
 - [ ] Phase 3B: 能量 Surrogate 训练
 - [ ] Phase 3C: TCR 微调
 - [ ] Phase MC: Monte Carlo 集成
 - [ ] **Phase Ablation**: E_φ vs EvoEF2 ranking, ±Decoy, MC weights
 - [ ] **Milestone**: corr > 0.7 with EvoEF2 on TCR
+
+**Phase 0 数据质量**:
+- E_bind 范围: [-200, +50] kcal/mol
+- 接触数: 10-200 contacts/pair
+- 序列长度: 30-500 AA/chain
+- 数据路径: `flowtcr_fold/data/pdb_structures/merged/`
 
 **Exploratory (Stage 3)**:
 - [ ] E1: Gradient Guidance in Flow ODE
