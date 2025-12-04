@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "/mnt/rna01/zwlexa/project/TCR/flowtcr_fold/TCRFold_Light/process_pdb/merge_structure_energy.py", line 176, in <module>
+    main()
+  File "/mnt/rna01/zwlexa/project/TCR/flowtcr_fold/TCRFold_Light/process_pdb/merge_structure_energy.py", line 112, in main
+    len_a = len(data["seq_a"])
+TypeError: len() of unsized object

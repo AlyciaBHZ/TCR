@@ -121,3 +121,13 @@ Epoch 9/100
        KL_HV=4.1579 | KL_HJ=4.0826
 
 Epoch 10/100
+  Train: loss=8.6583 | NCE(mhc)=5.516 NCE(pmhc)=7.800 NCE(pep)=8.021 | BCE=0.001
+  Val: loss=11.5087 | NCE(mhc)=5.524 NCE(pmhc)=7.723 NCE(pep)=7.958 | BCE=14.357
+       HV: R@1=0.404 R@5=0.764 R@10=0.887 R@20=0.969 | HJ: R@1=0.212 R@5=0.656 R@10=0.827 R@20=0.947
+       LV: R@1=0.524 R@5=0.936 R@10=0.997 R@20=1.000 | LJ: R@1=0.535 R@5=0.935 R@10=0.998 R@20=1.000
+       Baseline R@10: HV=0.393 HJ=0.744 LV=0.331 LJ=0.236
+       Δ vs Baseline: HV=+0.494 HJ=+0.084 LV=+0.666 LJ=+0.762
+       KL_HV=4.5720 | KL_HJ=4.6400
+  Checkpoint saved at epoch 10
+
+Epoch 11/100

@@ -1,0 +1,18 @@
+nohup: ignoring input
+[INFO] Processing 78896 .npz files...
+[INFO] Progress: 5000/78896 files processed, 4994 written
+[INFO] Progress: 10000/78896 files processed, 9984 written
+[INFO] Progress: 15000/78896 files processed, 14980 written
+[INFO] Progress: 20000/78896 files processed, 19977 written
+[INFO] Progress: 25000/78896 files processed, 24973 written
+[INFO] Progress: 30000/78896 files processed, 29968 written
+[INFO] Progress: 35000/78896 files processed, 34950 written
+[INFO] Progress: 40000/78896 files processed, 39846 written
+[INFO] Progress: 45000/78896 files processed, 44844 written
+[INFO] Progress: 50000/78896 files processed, 49843 written
+[INFO] Progress: 55000/78896 files processed, 54831 written
+[INFO] Progress: 60000/78896 files processed, 59723 written
+[INFO] Progress: 65000/78896 files processed, 64364 written
+[INFO] Progress: 70000/78896 files processed, 68940 written
+[INFO] Progress: 75000/78896 files processed, 73665 written
+[DONE] merged 76407 samples. Skipped missing energy: 2489

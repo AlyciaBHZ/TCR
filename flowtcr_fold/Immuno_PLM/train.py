@@ -316,7 +316,7 @@ def main():
                 print(f"       KL_HV={val_stats['kl_hv']:.4f} | KL_HJ={val_stats['kl_hj']:.4f}")
 
             current_loss = val_stats["loss"]
-            
+
             # Compute average R@10 across all gene types for best model selection
             r10_hv = val_stats.get("recall@10_hv", 0.0)
             r10_hj = val_stats.get("recall@10_hj", 0.0)
@@ -337,10 +337,10 @@ def main():
                         "val_loss": current_loss,
                     }, f, indent=2)
                 print(f"  ✓ New best model saved (R@10_avg={best_r10_avg:.4f})")
-            
+
             # Track loss for early stopping (still useful)
-            if current_loss < best_loss:
-                best_loss = current_loss
+        if current_loss < best_loss:
+            best_loss = current_loss
 
         # Periodic checkpoint
         if (epoch + 1) % cfg.ckpt_interval == 0:

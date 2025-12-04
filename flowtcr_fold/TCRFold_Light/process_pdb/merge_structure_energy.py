@@ -83,7 +83,10 @@ def main():
     skipped_no_energy = 0
     written = 0
 
-    for npz_path in npz_files:
+    print(f"[INFO] Processing {len(npz_files)} .npz files...")
+    for i, npz_path in enumerate(npz_files):
+        if (i + 1) % 5000 == 0:
+            print(f"[INFO] Progress: {i+1}/{len(npz_files)} files processed, {written} written", flush=True)
         data = np.load(npz_path, allow_pickle=True)
         sample_key = npz_path.stem  # e.g., 1ABC_AB
 
@@ -104,13 +107,19 @@ def main():
 
         # Load structure basics
         cm = data["contact_map"]
-        interface_mask_a = data.get("interface_res_mask_a") if isinstance(data, dict) else None
-        interface_mask_b = data.get("interface_res_mask_b") if isinstance(data, dict) else None
+        interface_mask_a = data["interface_res_mask_a"] if "interface_res_mask_a" in data else None
+        interface_mask_b = data["interface_res_mask_b"] if "interface_res_mask_b" in data else None
         n_contacts, n_int_a, n_int_b = derive_interface_stats(cm, interface_mask_a, interface_mask_b)
-        interface_sasa = data["interface_sasa"] if "interface_sasa" in data else np.float32(-1.0)
+        interface_sasa_raw = data["interface_sasa"] if "interface_sasa" in data else np.float32(-1.0)
+        interface_sasa = float(interface_sasa_raw.item()) if hasattr(interface_sasa_raw, 'item') and interface_sasa_raw.ndim == 0 else float(interface_sasa_raw)
 
-        len_a = len(data["seq_a"])
-        len_b = len(data["seq_b"])
+        # Handle 0-d arrays from npz (strings are stored as 0-d arrays)
+        seq_a = data["seq_a"]
+        seq_b = data["seq_b"]
+        seq_a_str = seq_a.item() if seq_a.ndim == 0 else str(seq_a)
+        seq_b_str = seq_b.item() if seq_b.ndim == 0 else str(seq_b)
+        len_a = len(seq_a_str)
+        len_b = len(seq_b_str)
         total_len = max(1, len_a + len_b)
 
         # Energies
@@ -123,8 +132,8 @@ def main():
         e_bind_per_contact = e_bind / max(1, n_contacts)
         e_bind_per_residue = e_bind / max(1, n_int_a + n_int_b)
         e_complex_per_len = e_complex / float(total_len)
-        if interface_sasa is not None and float(interface_sasa) > 0:
-            e_bind_per_area = e_bind / float(interface_sasa)
+        if interface_sasa is not None and interface_sasa > 0:
+            e_bind_per_area = e_bind / interface_sasa
         else:
             e_bind_per_area = np.nan
 

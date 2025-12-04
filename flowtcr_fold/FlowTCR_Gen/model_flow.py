@@ -325,12 +325,14 @@ class FlowTCRGen(nn.Module):
             else:
                 v = v_cond
             
-            # Euler step (squeeze and unsqueeze for batch dim)
-            x = x.squeeze(0) + v * dt
+            # Euler step on simplex with proper projection
+            # v is [L, vocab], x is [1, L, vocab]
+            x_new = x.squeeze(0) + v * dt
             
-            # Project back to simplex
-            x = F.softmax(x, dim=-1)
-            x = x.unsqueeze(0)  # Add batch dim back
+            # Project back to simplex: clamp to positive + normalize
+            x_new = x_new.clamp(min=1e-8)
+            x_new = x_new / x_new.sum(dim=-1, keepdim=True)
+            x = x_new.unsqueeze(0)  # Add batch dim back
         
         # Final prediction (squeeze batch dim)
         tokens = x.squeeze(0).argmax(dim=-1)

@@ -121,3 +121,22 @@ Epoch 9/100
        KL_HV=4.7473 | KL_HJ=4.8446
 
 Epoch 10/100
+  Train: loss=8.2848 | NCE(mhc)=5.356 NCE(pmhc)=7.259 NCE(pep)=7.506 | BCE=0.003
+  Val: loss=11.2516 | NCE(mhc)=5.395 NCE(pmhc)=7.320 NCE(pep)=7.544 | BCE=14.532
+       HV: R@1=0.409 R@5=0.772 R@10=0.891 R@20=0.974 | HJ: R@1=0.222 R@5=0.666 R@10=0.836 R@20=0.948
+       LV: R@1=0.550 R@5=0.937 R@10=0.997 R@20=1.000 | LJ: R@1=0.549 R@5=0.940 R@10=0.998 R@20=1.000
+       Baseline R@10: HV=0.393 HJ=0.744 LV=0.331 LJ=0.236
+       Δ vs Baseline: HV=+0.498 HJ=+0.092 LV=+0.666 LJ=+0.762
+       KL_HV=4.7874 | KL_HJ=4.8297
+  Checkpoint saved at epoch 10
+
+Epoch 11/100
+  Train: loss=8.2647 | NCE(mhc)=5.344 NCE(pmhc)=7.239 NCE(pep)=7.482 | BCE=0.003
+  Val: loss=11.2134 | NCE(mhc)=5.380 NCE(pmhc)=7.280 NCE(pep)=7.512 | BCE=14.491
+       HV: R@1=0.407 R@5=0.776 R@10=0.895 R@20=0.975 | HJ: R@1=0.219 R@5=0.662 R@10=0.834 R@20=0.949
+       LV: R@1=0.557 R@5=0.939 R@10=0.998 R@20=1.000 | LJ: R@1=0.542 R@5=0.940 R@10=0.998 R@20=1.000
+       Baseline R@10: HV=0.393 HJ=0.744 LV=0.331 LJ=0.236
+       Δ vs Baseline: HV=+0.502 HJ=+0.090 LV=+0.666 LJ=+0.762
+       KL_HV=4.6015 | KL_HJ=4.7682
+
+Epoch 12/100

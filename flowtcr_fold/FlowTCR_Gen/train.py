@@ -83,7 +83,7 @@ def parse_args():
 def get_output_dir(ablation: Optional[str]) -> Path:
     """Get output directory based on ablation mode."""
     if ablation is None:
-        return Path(DEFAULT_OUT_DIR)
+        return Path(DEFAULT_OUT_DIR) / "normal"
     return Path(DEFAULT_OUT_DIR) / f"ablation_{ablation}"
 
 
@@ -197,7 +197,8 @@ def evaluate(
     tokenizer: FlowTCRGenTokenizer,
     device: torch.device,
     cfg_weight: float = 1.5,
-    n_samples: int = 3,
+    n_samples_per_batch: int = 8,  # Increased from 3
+    max_eval_samples: int = 200,   # Limit total samples for speed
 ) -> Dict[str, float]:
     """Evaluate model on validation set with per-sample conditioning."""
     model.eval()
@@ -235,35 +236,39 @@ def evaluate(
         n_batches += 1
         
         # Generate samples for recovery/diversity metrics (per-sample conditioning)
-        B = batch['cdr3_tokens'].shape[0]
-        for i in range(min(B, n_samples)):
-            cdr3_len = int(batch['cdr3_mask'][i].sum().item())
+        # Only generate if we haven't hit the max
+        if len(generated_seqs) < max_eval_samples:
+            B = batch['cdr3_tokens'].shape[0]
+            n_to_gen = min(B, n_samples_per_batch, max_eval_samples - len(generated_seqs))
             
-            # Extract per-sample conditioning with batch dim
-            pep_tokens_i = batch['pep_tokens'][i:i+1]
-            pep_mask_i = batch['pep_mask'][i:i+1]
-            mhc_tokens_i = batch['mhc_tokens'][i:i+1]
-            mhc_mask_i = batch['mhc_mask'][i:i+1]
-            scaffold_tokens_i = {k: v[i:i+1] for k, v in batch['scaffold_tokens'].items()}
-            scaffold_mask_i = {k: v[i:i+1] for k, v in batch['scaffold_mask'].items()}
-            
-            tokens = model.generate(
-                cdr3_len=cdr3_len,
-                pep_tokens=pep_tokens_i,
-                pep_mask=pep_mask_i,
-                mhc_tokens=mhc_tokens_i,
-                mhc_mask=mhc_mask_i,
-                scaffold_tokens=scaffold_tokens_i,
-                scaffold_mask=scaffold_mask_i,
-                n_steps=50,
-                cfg_weight=cfg_weight,
-            )
-            
-            gen_seq = tokenizer.decode(tokens.tolist())
-            gt_seq = batch['cdr3_seqs'][i]
-            
-            generated_seqs.append(gen_seq)
-            ground_truth_seqs.append(gt_seq)
+            for i in range(n_to_gen):
+                cdr3_len = int(batch['cdr3_mask'][i].sum().item())
+                
+                # Extract per-sample conditioning with batch dim
+                pep_tokens_i = batch['pep_tokens'][i:i+1]
+                pep_mask_i = batch['pep_mask'][i:i+1]
+                mhc_tokens_i = batch['mhc_tokens'][i:i+1]
+                mhc_mask_i = batch['mhc_mask'][i:i+1]
+                scaffold_tokens_i = {k: v[i:i+1] for k, v in batch['scaffold_tokens'].items()}
+                scaffold_mask_i = {k: v[i:i+1] for k, v in batch['scaffold_mask'].items()}
+                
+                tokens = model.generate(
+                    cdr3_len=cdr3_len,
+                    pep_tokens=pep_tokens_i,
+                    pep_mask=pep_mask_i,
+                    mhc_tokens=mhc_tokens_i,
+                    mhc_mask=mhc_mask_i,
+                    scaffold_tokens=scaffold_tokens_i,
+                    scaffold_mask=scaffold_mask_i,
+                    n_steps=100,  # Increased from 50
+                    cfg_weight=cfg_weight,
+                )
+                
+                gen_seq = tokenizer.decode(tokens.tolist())
+                gt_seq = batch['cdr3_seqs'][i]
+                
+                generated_seqs.append(gen_seq)
+                ground_truth_seqs.append(gt_seq)
     
     # Compute metrics
     metrics = {
@@ -432,6 +437,7 @@ def main():
         print(f"   Train: loss={train_metrics['loss']:.4f}, mse={train_metrics['mse_loss']:.4f}")
         print(f"   Val: loss={val_metrics['val_loss']:.4f}, "
               f"recovery={val_metrics.get('recovery_exact', 0):.3f}, "
+              f"recovery_80={val_metrics.get('recovery_80', 0):.3f}, "
               f"diversity={val_metrics.get('diversity_ratio', 0):.3f}")
         
         # Check for improvement
@@ -452,9 +458,10 @@ def main():
             print(f"\n⏹️  Early stopping at epoch {epoch + 1}")
             break
     
-    # Final evaluation
+    # Final evaluation (more samples for final metrics)
     print("\n📊 Final Evaluation")
-    final_metrics = evaluate(model, val_loader, tokenizer, device, args.cfg_weight, n_samples=10)
+    final_metrics = evaluate(model, val_loader, tokenizer, device, args.cfg_weight, 
+                             n_samples_per_batch=16, max_eval_samples=500)
     for k, v in final_metrics.items():
         print(f"   {k}: {v:.4f}")
     

@@ -236,20 +236,20 @@ def train_epoch(
             valid_lj_mhc = valid_lj & has_mhc
 
             # MHC-group InfoNCE
-        loss_nce_mhc = (
+            loss_nce_mhc = (
                 multi_positive_infonce(out["z_pmhc"], out["z_hv"], _mask_pos(pos_mask_mhc, valid_hv_mhc), args.tau)
                 + multi_positive_infonce(out["z_pmhc"], out["z_hj"], _mask_pos(pos_mask_mhc, valid_hj_mhc), args.tau)
                 + multi_positive_infonce(out["z_pmhc"], out["z_lv"], _mask_pos(pos_mask_mhc, valid_lv_mhc), args.tau)
                 + multi_positive_infonce(out["z_pmhc"], out["z_lj"], _mask_pos(pos_mask_mhc, valid_lj_mhc), args.tau)
-        )
+            )
             
             # pMHC-group InfoNCE
-        loss_nce_pmhc = (
+            loss_nce_pmhc = (
                 multi_positive_infonce(out["z_pmhc"], out["z_hv"], _mask_pos(pos_mask_pmhc, valid_hv_mhc), args.tau)
                 + multi_positive_infonce(out["z_pmhc"], out["z_hj"], _mask_pos(pos_mask_pmhc, valid_hj_mhc), args.tau)
                 + multi_positive_infonce(out["z_pmhc"], out["z_lv"], _mask_pos(pos_mask_pmhc, valid_lv_mhc), args.tau)
                 + multi_positive_infonce(out["z_pmhc"], out["z_lj"], _mask_pos(pos_mask_pmhc, valid_lj_mhc), args.tau)
-        )
+            )
 
             # Multi-label BCE (only for samples with MHC)
             # has_mhc acts as additional validity mask
@@ -258,12 +258,12 @@ def train_epoch(
             valid_lv_target = (target_lv.sum(dim=1) > 0).float() * has_mhc.float()
             valid_lj_target = (target_lj.sum(dim=1) > 0).float() * has_mhc.float()
 
-        loss_bce = (
-            multilabel_bce(out["hv_logits"], target_hv, pos_weight["h_v"], valid_hv_target)
-            + multilabel_bce(out["hj_logits"], target_hj, pos_weight["h_j"], valid_hj_target)
-            + multilabel_bce(out["lv_logits"], target_lv, pos_weight["l_v"], valid_lv_target)
-            + multilabel_bce(out["lj_logits"], target_lj, pos_weight["l_j"], valid_lj_target)
-        )
+            loss_bce = (
+                multilabel_bce(out["hv_logits"], target_hv, pos_weight["h_v"], valid_hv_target)
+                + multilabel_bce(out["hj_logits"], target_hj, pos_weight["h_j"], valid_hj_target)
+                + multilabel_bce(out["lv_logits"], target_lv, pos_weight["l_v"], valid_lv_target)
+                + multilabel_bce(out["lj_logits"], target_lj, pos_weight["l_j"], valid_lj_target)
+            )
 
         # =====================================================================
         # Loss 2: Peptide-only InfoNCE (on ALL samples, weak weight)
@@ -346,7 +346,7 @@ def _recall_hits_at_k(
         for k in k_list:
             cutoff = min(k, topk_all.size(1))
             topk = topk_all[i, :cutoff]
-        hit = torch.isin(topk, positives).any().float()
+            hit = torch.isin(topk, positives).any().float()
             out[k]["hits"] += hit.item()
             out[k]["count"] += 1
     return out
@@ -438,30 +438,30 @@ def evaluate(
                 valid_lv_mhc = valid_lv & has_mhc
                 valid_lj_mhc = valid_lj & has_mhc
 
-            loss_nce_mhc = (
+                loss_nce_mhc = (
                     multi_positive_infonce(out["z_pmhc"], out["z_hv"], _mask_pos(pos_mask_mhc, valid_hv_mhc), args.tau)
                     + multi_positive_infonce(out["z_pmhc"], out["z_hj"], _mask_pos(pos_mask_mhc, valid_hj_mhc), args.tau)
                     + multi_positive_infonce(out["z_pmhc"], out["z_lv"], _mask_pos(pos_mask_mhc, valid_lv_mhc), args.tau)
                     + multi_positive_infonce(out["z_pmhc"], out["z_lj"], _mask_pos(pos_mask_mhc, valid_lj_mhc), args.tau)
-            )
-            loss_nce_pmhc = (
+                )
+                loss_nce_pmhc = (
                     multi_positive_infonce(out["z_pmhc"], out["z_hv"], _mask_pos(pos_mask_pmhc, valid_hv_mhc), args.tau)
                     + multi_positive_infonce(out["z_pmhc"], out["z_hj"], _mask_pos(pos_mask_pmhc, valid_hj_mhc), args.tau)
                     + multi_positive_infonce(out["z_pmhc"], out["z_lv"], _mask_pos(pos_mask_pmhc, valid_lv_mhc), args.tau)
                     + multi_positive_infonce(out["z_pmhc"], out["z_lj"], _mask_pos(pos_mask_pmhc, valid_lj_mhc), args.tau)
-            )
+                )
 
                 valid_hv_target = (target_hv.sum(dim=1) > 0).float() * has_mhc.float()
                 valid_hj_target = (target_hj.sum(dim=1) > 0).float() * has_mhc.float()
                 valid_lv_target = (target_lv.sum(dim=1) > 0).float() * has_mhc.float()
                 valid_lj_target = (target_lj.sum(dim=1) > 0).float() * has_mhc.float()
 
-            loss_bce = (
-                multilabel_bce(out["hv_logits"], target_hv, pos_weight["h_v"], valid_hv_target)
-                + multilabel_bce(out["hj_logits"], target_hj, pos_weight["h_j"], valid_hj_target)
-                + multilabel_bce(out["lv_logits"], target_lv, pos_weight["l_v"], valid_lv_target)
-                + multilabel_bce(out["lj_logits"], target_lj, pos_weight["l_j"], valid_lj_target)
-            )
+                loss_bce = (
+                    multilabel_bce(out["hv_logits"], target_hv, pos_weight["h_v"], valid_hv_target)
+                    + multilabel_bce(out["hj_logits"], target_hj, pos_weight["h_j"], valid_hj_target)
+                    + multilabel_bce(out["lv_logits"], target_lv, pos_weight["l_v"], valid_lv_target)
+                    + multilabel_bce(out["lj_logits"], target_lj, pos_weight["l_j"], valid_lj_target)
+                )
 
             # Peptide-only InfoNCE (all samples)
             loss_nce_pep = (

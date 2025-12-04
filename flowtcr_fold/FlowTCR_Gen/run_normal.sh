@@ -29,7 +29,7 @@ cd /mnt/rna01/zwlexa/project/TCR
 export PYTHONPATH="/mnt/rna01/zwlexa/project/TCR:$PYTHONPATH"
 
 # Output directory
-OUT_DIR="flowtcr_fold/FlowTCR_Gen/saved_model/stage2"
+OUT_DIR="flowtcr_fold/FlowTCR_Gen/saved_model/stage2/normal"
 mkdir -p "$OUT_DIR/checkpoints"
 mkdir -p "$OUT_DIR/best_model"
 mkdir -p "$OUT_DIR/other_results"

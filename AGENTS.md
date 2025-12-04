@@ -73,7 +73,7 @@ This window serves as the **Master Planning Window**. Each Stage has its own Imp
 | Stage | Implementation Plan | Status |
 |-------|---------------------|--------|
 | Stage 1 | `flowtcr_fold/Immuno_PLM/IMPLEMENTATION_PLAN.md` | ✅ 90% (R@10 88%) |
-| Stage 2 | `flowtcr_fold/FlowTCR_Gen/IMPLEMENTATION_PLAN.md` | ✅ 90% (Code Complete) |
+| Stage 2 | `flowtcr_fold/FlowTCR_Gen/IMPLEMENTATION_PLAN.md` | 🔧 95% (Bug Fixed, 待重训) |
 | Stage 3 | `flowtcr_fold/TCRFold_Light/IMPLEMENTATION_PLAN.md` | 🔄 30% |
 
 ### Workflow
@@ -88,11 +88,18 @@ This window serves as the **Master Planning Window**. Each Stage has its own Imp
 - Stage 3 Plan: `flowtcr_fold/TCRFold_Light/IMPLEMENTATION_PLAN.md`
 
 ## Progress Log
-- [ ] Stage1 dual-group InfoNCE+BCE wired; Top-K/KL vs freq & MHC-only baselines recorded.
-- [ ] Stage2 FlowTCR-Gen baseline (Dirichlet flow + CFG) trained; recon/diversity + model-score hook logged.
+- [x] Stage1 dual-group InfoNCE+BCE wired; Top-K/KL vs freq & MHC-only baselines recorded. ✅ (R@10 88.9%)
+- [~] Stage2 FlowTCR-Gen baseline: 代码完成 + Bug 修复; 首轮 buggy 训练分析完成; **待重新训练**
 - [ ] Stage3 Phase 3A/3B PPI pretrain/energy fit completed; checkpoints + EvoEF2 corr logged.
 - [ ] Stage3 Phase 3C TCR-specific finetune done; corr ≥0.7 achieved/assessed.
 - [ ] Pipeline integration: Flow samples → TCRFold-Prophet+E_φ screen → MC (hybrid energy) → EvoEF2 final check; commands + outputs recorded.
+
+### 详细进度 (2025-12-05)
+| Stage | 状态 | 关键成果 | 下一步 |
+|-------|------|----------|--------|
+| Stage 1 | ✅ 完成 | R@10=88.9%, pMHC vs MHC-only ablation | 可选探索 |
+| Stage 2 | 🔧 待重训 | 代码完成, ODE bug 修复, 首轮分析完成 | 重新训练 |
+| Stage 3 | 🔄 30% | Phase 0 数据准备中 | PDB/EvoEF2 |
 
 ## Stage-Specific Progress (sync from IMPLEMENTATION_PLAN.md)
 
@@ -117,14 +124,31 @@ This window serves as the **Master Planning Window**. Each Stage has its own Imp
 - [ ] E3: Contrastive + Generative Joint Training
 - [ ] E4: Causal LM Head for Generative Scaffold
 
-### Stage 2: FlowTCR-Gen (W3-5) ✅ 代码完成
+### Stage 2: FlowTCR-Gen (W3-5) 🔧 Bug 已修复，待重训
 - [x] Phase 1: 复用 psi_model 组件 (CollapseAwareEmbedding, SequenceProfileEvoformer)
 - [x] Phase 2: Dirichlet Flow Matching (dirichlet_flow.py)
 - [x] Phase 3: CFG 实现 (CFGWrapper, cfg_drop_prob)
 - [x] Phase 4: Model Score Hook (get_model_score, get_collapse_scalar)
 - [x] Phase 5: 评估指标 (metrics.py: recovery, diversity, ppl)
+- [x] **Phase 5.5: Bug 修复** (2025-12-05)
+  - ✅ ODE simplex 投影修复 (softmax → normalize)
+  - ✅ 评估参数优化 (n_samples 3→8, n_steps 50→100)
+  - ✅ Per-sample conditioning 完整实现
+  - ✅ Padding mask 进 entropy 正则
 - [ ] **Phase 6 (Ablation)**: ±Collapse, ±Hier Pairs, CFG sweep → 待训练运行
 - [ ] **Milestone**: Recovery > 30%, PPL < 10 → 待训练验证
+
+**首轮训练分析 (Buggy Version, 2025-12-04~05)**:
+
+| 发现 | 说明 |
+|------|------|
+| ✅ Loss 收敛正常 | MSE 从 0.1 降到 0.001，模型架构正确 |
+| ❌ Recovery = 0 | ODE simplex 投影 bug 导致 |
+| ⚠️ Diversity 急剧下降 | 0.99 → 0.01，可能是 bug + mode collapse |
+| 📊 No Collapse 收敛更快 | 参数量少，但可能欠拟合 |
+| ⏱️ No Hier 训练更快 | 节省 ~32% 时间 |
+
+详细分析见 `flowtcr_fold/FlowTCR_Gen/IMPLEMENTATION_PLAN.md` Section 10-12。
 
 **新增文件 (2025-12-03)**:
 - `encoder.py`: FlowTCRGenEncoder + CollapseAwareEmbedding

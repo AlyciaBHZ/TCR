@@ -101,22 +101,35 @@ class PPIDataset(Dataset):
             try:
                 data = np.load(npz_path, allow_pickle=True)
                 
-                # Required fields
-                seq_a = str(data['seq_a'])
-                seq_b = str(data['seq_b'])
+                # Required fields - handle 0-dim arrays
+                seq_a_raw = data['seq_a']
+                seq_b_raw = data['seq_b']
+                seq_a = str(seq_a_raw.item()) if seq_a_raw.ndim == 0 else str(seq_a_raw)
+                seq_b = str(seq_b_raw.item()) if seq_b_raw.ndim == 0 else str(seq_b_raw)
                 
                 # Skip if too long
                 if len(seq_a) > self.max_length or len(seq_b) > self.max_length:
                     skipped_length += 1
                     continue
                 
+                # Helper to extract scalar from 0-dim array
+                def to_str(x):
+                    return str(x.item()) if hasattr(x, 'item') else str(x)
+                
+                def to_int(x):
+                    return int(x.item()) if hasattr(x, 'item') else int(x)
+                
                 # Build sample dict
+                # Support both old (chain_a) and new (chain_id_a) field names
+                chain_a_key = 'chain_id_a' if 'chain_id_a' in data else 'chain_a'
+                chain_b_key = 'chain_id_b' if 'chain_id_b' in data else 'chain_b'
+                
                 sample = {
                     'path': str(npz_path),
                     'sample_key': npz_path.stem,
-                    'pdb_id': str(data['pdb_id']),
-                    'chain_a': str(data['chain_a']),
-                    'chain_b': str(data['chain_b']),
+                    'pdb_id': to_str(data['pdb_id']),
+                    'chain_a': to_str(data[chain_a_key]),
+                    'chain_b': to_str(data[chain_b_key]),
                     
                     # Tier 2: Sequences
                     'seq_a': seq_a,
@@ -132,9 +145,9 @@ class PPIDataset(Dataset):
                     'contact_map': data['contact_map'].astype(np.float32),
                     
                     # Tier 2: Interface statistics
-                    'n_interface_contacts': int(data['n_interface_contacts']),
-                    'n_interface_res_a': int(data['n_interface_res_a']),
-                    'n_interface_res_b': int(data['n_interface_res_b']),
+                    'n_interface_contacts': to_int(data['n_interface_contacts']),
+                    'n_interface_res_a': to_int(data['n_interface_res_a']),
+                    'n_interface_res_b': to_int(data['n_interface_res_b']),
                 }
                 
                 # Optional: Distance map
@@ -147,25 +160,33 @@ class PPIDataset(Dataset):
                 if 'interface_res_mask_b' in data:
                     sample['interface_res_mask_b'] = data['interface_res_mask_b'].astype(np.float32)
                 
-                # Tier 1: Global energies
+                # Tier 1: Global energies (handle 0-dim arrays)
                 for key in ['E_complex', 'E_receptor', 'E_ligand', 'E_bind']:
                     if key in data:
-                        sample[key] = float(data[key])
+                        val = data[key]
+                        sample[key] = float(val.item()) if hasattr(val, 'item') else float(val)
                     else:
                         sample[key] = 0.0
                 
-                # Tier 2 derived: Normalized energies
+                # Tier 2 derived: Normalized energies (handle 0-dim arrays)
                 for key in ['E_bind_per_contact', 'E_bind_per_residue', 'E_complex_per_len']:
                     if key in data:
-                        sample[key] = float(data[key])
+                        val = data[key]
+                        sample[key] = float(val.item()) if hasattr(val, 'item') else float(val)
                     else:
                         sample[key] = 0.0
                 
                 # Tier 3: Energy terms (optional)
-                if self.include_tier3 and 'energy_terms_json' in data:
-                    try:
-                        sample['energy_terms'] = json.loads(str(data['energy_terms_json']))
-                    except json.JSONDecodeError:
+                if self.include_tier3:
+                    if 'energy_terms' in data:
+                        et = data['energy_terms']
+                        sample['energy_terms'] = et.item() if hasattr(et, 'item') else et
+                    elif 'energy_terms_json' in data:
+                        try:
+                            sample['energy_terms'] = json.loads(str(data['energy_terms_json']))
+                        except json.JSONDecodeError:
+                            sample['energy_terms'] = {}
+                    else:
                         sample['energy_terms'] = {}
                 
                 samples.append(sample)
