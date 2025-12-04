@@ -30,7 +30,7 @@ echo "Log: $LOG_FILE" | tee -a "$LOG_FILE"
 echo "========================================" | tee -a "$LOG_FILE"
 
 # Training with line-buffered output to log file
-stdbuf -oL python -u -m flowtcr_fold.Immuno_PLM.train --ablation 2>&1 | tee -a "$LOG_FILE"
+stdbuf -oL python -u -m flowtcr_fold.Immuno_PLM.train --ablation --resume 2>&1 | tee -a "$LOG_FILE"
 
 echo "========================================" | tee -a "$LOG_FILE"
 echo "Done: $(date)" | tee -a "$LOG_FILE"

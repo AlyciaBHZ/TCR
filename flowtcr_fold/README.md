@@ -6,13 +6,13 @@
 
 ## 🚀 FlowTCR-Fold v3.1 Quick Reference
 
-| Stage | Module | Method | Key Innovation |
-|-------|--------|--------|----------------|
-| **1** | [Immuno-PLM](Immuno_PLM/IMPLEMENTATION_PLAN.md) | p(V,J \| MHC, peptide) | Dual-group InfoNCE + Multi-label BCE |
-| **2** | [FlowTCR-Gen](FlowTCR_Gen/IMPLEMENTATION_PLAN.md) | Dirichlet Flow Matching | Collapse Token + Hierarchical Pairs (7-level) |
-| **3** | [TCRFold-Prophet](TCRFold_Light/IMPLEMENTATION_PLAN.md) | Structure S_ψ + Energy E_φ | EvoEF2-NN Surrogate + Offline MC |
+| Stage | Module | Method | Key Innovation | Status |
+|-------|--------|--------|----------------|--------|
+| **1** | [Immuno-PLM](Immuno_PLM/IMPLEMENTATION_PLAN.md) | p(V,J \| MHC, peptide) | Dual-group InfoNCE + Multi-label BCE | ✅ **90%** R@10=88.9% |
+| **2** | [FlowTCR-Gen](FlowTCR_Gen/IMPLEMENTATION_PLAN.md) | Dirichlet Flow Matching | Collapse Token + Hierarchical Pairs (7-level) | ✅ **90%** 代码完成 |
+| **3** | [TCRFold-Prophet](TCRFold_Light/IMPLEMENTATION_PLAN.md) | Structure S_ψ + Energy E_φ | EvoEF2-NN Surrogate + Offline MC | 🔄 **30%** Phase 0 |
 
-**Execution**: W1-2 Stage 1 → W3-5 Stage 2 → W6-10 Stage 3 → W11-12 Integration
+**Execution**: W1-2 Stage 1 ✅ → W3-5 Stage 2 🔄 → W6-10 Stage 3 ⏳ → W11-12 Integration ⏳
 
 📋 **Detailed Plans**: Click the module links above for step-by-step implementation guides.
 
@@ -33,6 +33,7 @@
 11. [Quickstart Guide](#9-quickstart-guide)
 12. [Legacy Code References](#10-legacy-code-references)
 13. [Status & Roadmap](#11-status--roadmap)
+14. [Work Log / 工作日志](#12-work-log--工作日志) ⬅️ **Progress Tracking**
 
 ---
 
@@ -942,29 +943,63 @@ This project builds upon validated components from previous work:
 
 | Stage | Module | Status | Key Milestones |
 |-------|--------|--------|----------------|
-| 1 | **Immuno-PLM** | 🔄 70% | Dual InfoNCE + BCE pending; R@10 target 20-40% |
-| 2 | **FlowTCR-Gen** | 🔄 40% | Collapse/pairs integrated; CFG + flow head pending |
-| 3A | **TCRFold-Prophet (PPI)** | 🔄 30% | PDB download + FAPE training pending |
-| 3B | **Energy Surrogate (E_φ)** | 🔄 20% | EvoEF2 batch processing ready; NN fitting pending |
-| 3C | **TCR Finetune** | ⏳ 0% | Depends on 3A/3B completion |
-| — | **End-to-end Pipeline** | 🔄 50% | Skeleton implemented; integration pending |
+| 1 | **Immuno-PLM** | ✅ **90%** | R@10 = 88.9% (远超 20% 目标) |
+| 2 | **FlowTCR-Gen** | ✅ **90%** | 代码完成，待训练验证 |
+| 3A | **TCRFold-Prophet (PPI)** | 🔄 30% | Phase 0 数据准备中 |
+| 3B | **Energy Surrogate (E_φ)** | 🔄 20% | EvoEF2 batch processing ready |
+| 3C | **TCR Finetune** | ⏳ 0% | Depends on 3A/3B |
+| — | **End-to-end Pipeline** | 🔄 50% | Skeleton implemented |
 
-### 11.2 Execution Timeline (12-16 weeks)
+### 11.2 Latest Results (2025-12-03)
 
-| Week | Stage | Tasks | Milestone |
-|------|-------|-------|-----------|
-| W1-2 | Stage 1 | Dual InfoNCE + BCE + allele emb | R@10 > 20%, KL < baseline |
-| W3-5 | Stage 2 | FlowTCRGen refactor + ODE + CFG | Recovery > 30%, PPL < 10 |
-| W6-8 | Stage 3A/3B | PPI pretrain + energy fit | Corr > 0.6 with EvoEF2 |
-| W9-10 | Stage 3C | TCR finetune + MC integration | Corr > 0.7 on TCR |
-| W11-12 | Integration | End-to-end eval + paper draft | Full pipeline functional |
-| W13+ | Exploratory | Guided ODE, grad-MC, self-play | Optional enhancements |
+#### Stage 1: Immuno-PLM ✅ 目标达成
 
-### 11.3 Immediate Priorities
+| Mode | R@10 HV | R@10 HJ | R@10 LV | R@10 LJ | Baseline HV |
+|------|---------|---------|---------|---------|-------------|
+| Normal (pMHC) | **88.9%** | **83.3%** | 99.8% | 99.9% | 39.3% |
+| Ablation (MHC-only) | 88.1% | 82.9% | 99.7% | 99.8% | 39.3% |
 
-1. 🔴 **Stage 1**: Dual-group InfoNCE + multi-label BCE + gene-name cleanup
-2. 🔴 **Stage 2**: psiCLM → FlowTCRGen refactor (x_t injection + flow head)
-3. 🟡 **Stage 3**: PDB download + EvoEF2 batch processing scripts
+- **Δ (pMHC - MHC)**: +0.8% HV, +0.4% HJ → peptide 贡献微弱（符合生物学预期）
+- **Checkpoint**: `flowtcr_fold/Immuno_PLM/saved_model/stage1/best/`
+- **SLURM Jobs**: slurm-1080307 (ablation), slurm-1080321 (normal)
+
+#### Stage 2: FlowTCR-Gen 🔄 代码完成
+
+| 组件 | 文件 | 状态 |
+|------|------|------|
+| Encoder (Collapse + Evoformer) | `encoder.py` | ✅ |
+| Dirichlet Flow | `dirichlet_flow.py` | ✅ |
+| CFG Wrapper | `dirichlet_flow.py` | ✅ |
+| 主模型 | `model_flow.py` | ✅ |
+| 训练脚本 | `train.py` | ✅ |
+| 评估指标 | `metrics.py` | ✅ |
+| Ablation 开关 | `--no_collapse`, `--no_hier_pairs` | ✅ |
+
+- **待验证**: Recovery > 30%, PPL < 10
+- **Checkpoint 路径**: `flowtcr_fold/FlowTCR_Gen/saved_model/`
+
+#### Stage 3: TCRFold-Prophet 🔄 Phase 0
+
+- PDB 下载脚本: `process_pdb/download_from_id_list.py` ✅
+- PPI 预处理: `process_pdb/preprocess_ppi_pairs.py` ✅
+- EvoEF2 批处理: 待 EvoEF2 二进制配置
+
+### 11.3 Execution Timeline (12-16 weeks)
+
+| Week | Stage | Tasks | Milestone | Status |
+|------|-------|-------|-----------|--------|
+| W1-2 | Stage 1 | Dual InfoNCE + BCE + allele emb | R@10 > 20% | ✅ **88.9%** |
+| W3-5 | Stage 2 | FlowTCRGen refactor + ODE + CFG | Recovery > 30%, PPL < 10 | 🔄 代码完成 |
+| W6-8 | Stage 3A/3B | PPI pretrain + energy fit | Corr > 0.6 with EvoEF2 | ⏳ |
+| W9-10 | Stage 3C | TCR finetune + MC integration | Corr > 0.7 on TCR | ⏳ |
+| W11-12 | Integration | End-to-end eval + paper draft | Full pipeline functional | ⏳ |
+| W13+ | Exploratory | Guided ODE, grad-MC, self-play | Optional enhancements | ⏳ |
+
+### 11.4 Immediate Priorities
+
+1. ✅ ~~**Stage 1**: Dual-group InfoNCE + multi-label BCE~~ → **完成，R@10 = 88.9%**
+2. 🔴 **Stage 2**: 启动训练，验证 Recovery/PPL 指标
+3. 🔴 **Stage 3**: PDB 下载 + EvoEF2 批处理 → Phase 3A 数据准备
 
 ---
 
@@ -977,6 +1012,143 @@ This project builds upon validated components from previous work:
 
 ---
 
-**Last Updated**: 2025-12-01  
+## 12. Work Log / 工作日志
+
+> 详细记录项目进展、关键成果、检查点位置
+
+### 📅 2025-12-03: Stage 2 FlowTCR-Gen 代码完成
+
+**新增文件**:
+| 文件 | 功能 | 行数 |
+|------|------|------|
+| `FlowTCR_Gen/encoder.py` | FlowTCRGenEncoder + CollapseAwareEmbedding | ~200 |
+| `FlowTCR_Gen/dirichlet_flow.py` | DirichletFlowMatcher + CFGWrapper + ODE Sampler | ~416 |
+| `FlowTCR_Gen/model_flow.py` | FlowTCRGen 主模型 | ~608 |
+| `FlowTCR_Gen/data.py` | CDR3Dataset + Tokenizer + collate_fn | ~150 |
+| `FlowTCR_Gen/metrics.py` | Recovery, Diversity, Perplexity | ~100 |
+| `FlowTCR_Gen/train.py` | 训练脚本 (支持 --ablation) | ~472 |
+| `FlowTCR_Gen/run_ablation.sh` | SLURM ablation 提交 | 32 |
+
+**核心功能**:
+- ✅ 7-level hierarchical pair embeddings (复用 psi_model)
+- ✅ Collapse token (ψ) 全局聚合
+- ✅ SequenceProfileEvoformer (带序列 profile 注意力)
+- ✅ Dirichlet Flow Matching (simplex 上的连续时间生成)
+- ✅ Classifier-Free Guidance (CFG) wrapper
+- ✅ Ablation 开关: `--no_collapse`, `--no_hier_pairs`, `--cfg_weight`
+
+**待验证**: 启动训练，目标 Recovery > 30%, PPL < 10
+
+---
+
+### 📅 2025-12-02: Stage 1 Immuno-PLM 目标达成
+
+**关键成果**:
+| Mode | R@10 HV | R@10 HJ | R@10 LV | R@10 LJ |
+|------|---------|---------|---------|---------|
+| Normal (pMHC) | **88.9%** | **83.3%** | 99.8% | 99.9% |
+| Ablation (MHC-only) | 88.1% | 82.9% | 99.7% | 99.8% |
+| Frequency Baseline | 39.3% | 74.4% | 33.1% | 23.6% |
+
+**Δ (pMHC - MHC)**: +0.8% HV, +0.4% HJ → peptide 贡献微弱（符合生物学预期）
+
+**训练配置**:
+- Model: ESM2-650M + LoRA (rank=16, alpha=32)
+- Loss: λ_pmhc=0.3, λ_bce=0.2, λ_pep=0.1
+- Epochs: 100 (Early stop 触发于 ~Epoch 7)
+- GPU: 1× A100 80GB
+
+**SLURM Jobs**:
+- `slurm-1080321.out`: Normal training
+- `slurm-1080307.out`: Ablation (peptide-off)
+
+**Checkpoints**:
+```
+flowtcr_fold/Immuno_PLM/saved_model/
+├── stage1/
+│   ├── checkpoints/          # 每 epoch 保存
+│   ├── best/                 # 最佳模型
+│   │   └── model_best.pt
+│   └── other_results/        # 日志、指标
+└── ablation_peptide_off/
+    └── best/
+        └── model_best.pt
+```
+
+**代码重构**:
+- 旧版本归档至 `old_version/`
+- 新模块化结构: `model.py`, `data.py`, `losses_scaffold.py`, `train_utils.py`, `train.py`
+
+**观察**:
+- ⚠️ BCE loss 过拟合 (Train→0, Val→13+)，但不影响检索性能
+- 📌 建议后续降低 λ_bce 或移除
+
+---
+
+### 📅 2025-12-01: Master Plan v3.1 定稿
+
+**文档更新**:
+- README.md 全面更新至 v3.1
+- 创建三个 Stage 的 IMPLEMENTATION_PLAN.md
+- 创建 AGENTS.md 多 Agent 协调结构
+
+**计划核心**:
+- Stage 1: Dual-group InfoNCE + Multi-label BCE (Practical)
+- Stage 2: Collapse Token + Hierarchical Pairs + Dirichlet Flow + CFG (Practical)
+- Stage 3: S_ψ (PPI pretrain) + E_φ (EvoEF2 surrogate) + MC (Practical)
+- Exploratory: Gradient guidance ODE, Self-play, Causal LM head
+
+---
+
+### 🗂️ 项目文件结构 (当前)
+
+```
+flowtcr_fold/
+├── README.md                          # 本文件
+├── Immuno_PLM/                        # Stage 1 ✅ 90%
+│   ├── IMPLEMENTATION_PLAN.md
+│   ├── train.py                       # 主入口
+│   ├── model.py, data.py, losses_scaffold.py, train_utils.py
+│   ├── saved_model/stage1/best/       # Checkpoint
+│   ├── run_normal.sh, run_ablation.sh # SLURM
+│   └── old_version/                   # 归档
+├── FlowTCR_Gen/                       # Stage 2 ✅ 90% (代码完成)
+│   ├── IMPLEMENTATION_PLAN.md
+│   ├── train.py                       # 主入口
+│   ├── model_flow.py                  # FlowTCRGen
+│   ├── encoder.py                     # CollapseAwareEmbedding
+│   ├── dirichlet_flow.py              # Flow + CFG
+│   ├── data.py, metrics.py
+│   ├── saved_model/                   # (待训练)
+│   └── run_ablation.sh
+├── TCRFold_Light/                     # Stage 3 🔄 30%
+│   ├── IMPLEMENTATION_PLAN.md
+│   ├── process_pdb/                   # Phase 0 脚本
+│   │   ├── download_from_id_list.py
+│   │   ├── preprocess_ppi_pairs.py
+│   │   └── run_phase0.sbatch
+│   └── tcrfold_light.py               # 模型骨架
+├── physics/                           # EvoEF2 wrapper
+│   └── evoef_runner.py
+└── data/                              # 数据目录
+    ├── trn.jsonl, val.jsonl
+    └── pdb_structures/                # (待下载)
+```
+
+---
+
+### 📌 下一步行动
+
+| 优先级 | 任务 | 负责 | 预计时间 |
+|--------|------|------|----------|
+| 🔴 P0 | Stage 2 启动训练，验证 Recovery/PPL | - | W3 |
+| 🔴 P0 | Stage 3 Phase 0: PDB 下载 + EvoEF2 配置 | - | W3-4 |
+| 🟡 P1 | Stage 2 Ablation: ±Collapse, ±Hier Pairs | - | W4 |
+| 🟡 P1 | Stage 3 Phase 3A: PPI pretrain | - | W6-8 |
+| 🟢 P2 | End-to-end pipeline 集成测试 | - | W11 |
+
+---
+
+**Last Updated**: 2025-12-03  
 **Version**: 3.1  
 **Maintainers**: FlowTCR-Fold Team

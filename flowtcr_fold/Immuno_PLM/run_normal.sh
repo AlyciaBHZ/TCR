@@ -31,7 +31,7 @@ echo "========================================" | tee -a "$LOG_FILE"
 
 # Training with line-buffered output to log file
 # stdbuf -oL ensures line-by-line output (no 64KB buffer wait)
-stdbuf -oL python -u -m flowtcr_fold.Immuno_PLM.train 2>&1 | tee -a "$LOG_FILE"
+stdbuf -oL python -u -m flowtcr_fold.Immuno_PLM.train --resume 2>&1 | tee -a "$LOG_FILE"
 
 echo "========================================" | tee -a "$LOG_FILE"
 echo "Done: $(date)" | tee -a "$LOG_FILE"

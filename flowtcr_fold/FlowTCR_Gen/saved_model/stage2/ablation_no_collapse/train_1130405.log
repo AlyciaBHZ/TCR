@@ -1,0 +1,73 @@
+========================================
+FlowTCR-Gen (Stage 2) Training
+========================================
+Job: 1130405 on zgpuA1002
+Start: Thu Dec  4 13:47:07 +08 2025
+Mode: ABLATION - No Collapse Token
+Output: flowtcr_fold/FlowTCR_Gen/saved_model/stage2/ablation_no_collapse
+Log: flowtcr_fold/FlowTCR_Gen/saved_model/stage2/ablation_no_collapse/train_1130405.log
+GPU: NVIDIA A100 80GB PCIe
+========================================
+🚀 FlowTCR-Gen Training (Stage 2)
+   Device: cuda
+   Ablation: no_collapse
+   Vocab size: 25
+[FlowTCRGenDataset] Filtered 209407 -> 209407 (require cdr3_b)
+[FlowTCRGenDataset] Loaded 209407 samples from flowtcr_fold/data/trn.jsonl
+[FlowTCRGenDataset] Filtered 24020 -> 24020 (require cdr3_b)
+[FlowTCRGenDataset] Loaded 24020 samples from flowtcr_fold/data/val.jsonl
+   Model parameters: 5,331,039
+
+🏃 Starting training from epoch 1
+  [Epoch 1 Batch 50] loss=0.1294 mse=0.1610
+  [Epoch 1 Batch 100] loss=0.0882 mse=0.1200
+  [Epoch 1 Batch 150] loss=0.0576 mse=0.0895
+  [Epoch 1 Batch 200] loss=0.0162 mse=0.0483
+  [Epoch 1 Batch 250] loss=0.0086 mse=0.0408
+  [Epoch 1 Batch 300] loss=0.0138 mse=0.0459
+  [Epoch 1 Batch 350] loss=0.0044 mse=0.0365
+  [Epoch 1 Batch 400] loss=0.0050 mse=0.0371
+  [Epoch 1 Batch 450] loss=0.0012 mse=0.0334
+  [Epoch 1 Batch 500] loss=-0.0006 mse=0.0316
+  [Epoch 1 Batch 550] loss=-0.0013 mse=0.0308
+  [Epoch 1 Batch 600] loss=-0.0022 mse=0.0299
+  [Epoch 1 Batch 650] loss=-0.0028 mse=0.0293
+  [Epoch 1 Batch 700] loss=-0.0046 mse=0.0275
+  [Epoch 1 Batch 750] loss=-0.0059 mse=0.0262
+  [Epoch 1 Batch 800] loss=-0.0080 mse=0.0242
+  [Epoch 1 Batch 850] loss=-0.0091 mse=0.0230
+  [Epoch 1 Batch 900] loss=-0.0108 mse=0.0212
+  [Epoch 1 Batch 950] loss=-0.0121 mse=0.0200
+  [Epoch 1 Batch 1000] loss=-0.0133 mse=0.0187
+  [Epoch 1 Batch 1050] loss=-0.0155 mse=0.0166
+  [Epoch 1 Batch 1100] loss=-0.0142 mse=0.0178
+  [Epoch 1 Batch 1150] loss=-0.0171 mse=0.0149
+  [Epoch 1 Batch 1200] loss=-0.0185 mse=0.0134
+  [Epoch 1 Batch 1250] loss=-0.0221 mse=0.0098
+  [Epoch 1 Batch 1300] loss=-0.0211 mse=0.0109
+  [Epoch 1 Batch 1350] loss=-0.0227 mse=0.0093
+  [Epoch 1 Batch 1400] loss=-0.0234 mse=0.0086
+  [Epoch 1 Batch 1450] loss=-0.0227 mse=0.0093
+  [Epoch 1 Batch 1500] loss=-0.0238 mse=0.0081
+  [Epoch 1 Batch 1550] loss=-0.0235 mse=0.0084
+  [Epoch 1 Batch 1600] loss=-0.0238 mse=0.0081
+  [Epoch 1 Batch 1650] loss=-0.0177 mse=0.0144
+  [Epoch 1 Batch 1700] loss=-0.0223 mse=0.0097
+  [Epoch 1 Batch 1750] loss=-0.0259 mse=0.0060
+  [Epoch 1 Batch 1800] loss=-0.0240 mse=0.0080
+  [Epoch 1 Batch 1850] loss=-0.0248 mse=0.0072
+  [Epoch 1 Batch 1900] loss=-0.0249 mse=0.0071
+  [Epoch 1 Batch 1950] loss=-0.0251 mse=0.0068
+  [Epoch 1 Batch 2000] loss=-0.0235 mse=0.0084
+  [Epoch 1 Batch 2050] loss=-0.0279 mse=0.0039
+  [Epoch 1 Batch 2100] loss=-0.0271 mse=0.0048
+  [Epoch 1 Batch 2150] loss=-0.0268 mse=0.0051
+  [Epoch 1 Batch 2200] loss=-0.0264 mse=0.0056
+  [Epoch 1 Batch 2250] loss=-0.0281 mse=0.0038
+  [Epoch 1 Batch 2300] loss=-0.0282 mse=0.0037
+  [Epoch 1 Batch 2350] loss=-0.0294 mse=0.0025
+  [Epoch 1 Batch 2400] loss=-0.0268 mse=0.0051
+  [Epoch 1 Batch 2450] loss=-0.0258 mse=0.0062
+  [Epoch 1 Batch 2500] loss=-0.0279 mse=0.0040
+  [Epoch 1 Batch 2550] loss=-0.0267 mse=0.0052
+  [Epoch 1 Batch 2600] loss=-0.0266 mse=0.0053

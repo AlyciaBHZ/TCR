@@ -1,0 +1,19 @@
+========================================
+Job: 1118534 on zgpuA1001
+Start: Thu Dec  4 02:40:37 +08 2025
+Mode: ABLATION (peptide-off)
+Log: flowtcr_fold/Immuno_PLM/saved_model/ablation_peptide_off/train_1118534.log
+========================================
+Traceback (most recent call last):
+  File "/mnt/rna01/zwlexa/miniconda3/envs/torch/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/mnt/rna01/zwlexa/miniconda3/envs/torch/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/mnt/rna01/zwlexa/project/TCR/flowtcr_fold/Immuno_PLM/train.py", line 24, in <module>
+    from flowtcr_fold.Immuno_PLM.train_utils import (
+  File "/mnt/rna01/zwlexa/project/TCR/flowtcr_fold/Immuno_PLM/train_utils.py", line 256
+    valid_hv_target = (target_hv.sum(dim=1) > 0).float() * has_mhc.float()
+IndentationError: unexpected indent
+========================================
+Done: Thu Dec  4 02:40:40 +08 2025
+========================================

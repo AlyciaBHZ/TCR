@@ -1,0 +1,77 @@
+========================================
+Job: 1118621 on zgpuA1001
+Start: Thu Dec  4 02:46:53 +08 2025
+Mode: ABLATION (peptide-off)
+Log: flowtcr_fold/Immuno_PLM/saved_model/ablation_peptide_off/train_1118621.log
+========================================
+======================================================================
+Stage 1: Immuno-PLM Scaffold Prior Training
+======================================================================
+Mode: ABLATION (peptide-off)
+Data: flowtcr_fold/data/trn.jsonl
+Model: ESM=esm2_t33_650M_UR50D + LoRA(rank=16)
+Loss weights: λ_pmhc=0.3, λ_bce=0.2, λ_pep=0.1
+Output: flowtcr_fold/Immuno_PLM/saved_model/ablation_peptide_off
+Device: cuda
+======================================================================
+[Dataset] Filtered 209407 -> 209406 (require peptide)
+[Dataset] Has MHC: 135104 (64.5%), Missing MHC: 74302
+[Dataset] Samples: 209406 | Gene vocab HV/HJ/LV/LJ = 401/110/236/177 | Alleles=175
+
+[pos_weight stats]
+  h_v: min=4.27, max=50.00, mean=40.73
+  h_j: min=2.71, max=50.00, mean=38.28
+  l_v: min=4.65, max=50.00, mean=35.53
+  l_j: min=5.60, max=50.00, mean=27.87
+[Dataset] Filtered 24020 -> 24020 (require peptide)
+[Dataset] Has MHC: 15495 (64.5%), Missing MHC: 8525
+[Dataset] Samples: 24020 | Gene vocab HV/HJ/LV/LJ = 401/110/236/177 | Alleles=175
+[LoRA] Trainable params: 5,406,720/656,449,974 (0.82%)
+Params: 6,083,228/657,126,482 trainable (0.93%)
+Loading checkpoint from flowtcr_fold/Immuno_PLM/saved_model/ablation_peptide_off/checkpoints/scaffold_epoch_10.pt
+/mnt/rna01/zwlexa/project/TCR/flowtcr_fold/Immuno_PLM/train.py:111: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  state = torch.load(ckpt_path, map_location=device)
+/mnt/rna01/zwlexa/project/TCR/flowtcr_fold/Immuno_PLM/train.py:117: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  optimizer.load_state_dict(torch.load(opt_path, map_location=device))
+Loaded optimizer state from flowtcr_fold/Immuno_PLM/saved_model/ablation_peptide_off/checkpoints/scaffold_epoch_10.opt
+Resumed from epoch 10
+
+Building frequency baseline...
+Frequency Baseline R@K (train):
+  h_v: R@1=0.077, R@5=0.258, R@10=0.402, R@20=0.578
+  h_j: R@1=0.142, R@5=0.494, R@10=0.739, R@20=0.947
+  l_v: R@1=0.067, R@5=0.216, R@10=0.347, R@20=0.535
+  l_j: R@1=0.046, R@5=0.152, R@10=0.248, R@20=0.408
+
+Starting training from epoch 11...
+
+Epoch 11/100
+  Train: loss=8.6416 | NCE(mhc)=5.505 NCE(pmhc)=7.785 NCE(pep)=8.013 | BCE=0.001
+  Val: loss=11.4252 | NCE(mhc)=5.512 NCE(pmhc)=7.755 NCE(pep)=7.982 | BCE=13.940
+       HV: R@1=0.402 R@5=0.765 R@10=0.883 R@20=0.970 | HJ: R@1=0.215 R@5=0.662 R@10=0.828 R@20=0.950
+       LV: R@1=0.535 R@5=0.940 R@10=0.997 R@20=1.000 | LJ: R@1=0.540 R@5=0.929 R@10=0.998 R@20=1.000
+       Baseline R@10: HV=0.393 HJ=0.744 LV=0.331 LJ=0.236
+       Δ vs Baseline: HV=+0.491 HJ=+0.085 LV=+0.666 LJ=+0.762
+       KL_HV=4.0970 | KL_HJ=3.9234
+  ✓ New best model saved (R@10_avg=0.9267)
+
+Epoch 12/100
+  Train: loss=8.6415 | NCE(mhc)=5.504 NCE(pmhc)=7.789 NCE(pep)=8.009 | BCE=0.001
+  Val: loss=11.4416 | NCE(mhc)=5.512 NCE(pmhc)=7.769 NCE(pep)=7.993 | BCE=13.997
+       HV: R@1=0.402 R@5=0.765 R@10=0.884 R@20=0.971 | HJ: R@1=0.219 R@5=0.661 R@10=0.830 R@20=0.951
+       LV: R@1=0.526 R@5=0.936 R@10=0.996 R@20=1.000 | LJ: R@1=0.536 R@5=0.936 R@10=0.998 R@20=1.000
+       Baseline R@10: HV=0.393 HJ=0.744 LV=0.331 LJ=0.236
+       Δ vs Baseline: HV=+0.491 HJ=+0.086 LV=+0.665 LJ=+0.762
+       KL_HV=4.1348 | KL_HJ=4.1169
+  ✓ New best model saved (R@10_avg=0.9269)
+
+Epoch 13/100
+  Train: loss=8.6264 | NCE(mhc)=5.494 NCE(pmhc)=7.775 NCE(pep)=7.999 | BCE=0.001
+  Val: loss=11.3858 | NCE(mhc)=5.505 NCE(pmhc)=7.810 NCE(pep)=8.025 | BCE=13.675
+       HV: R@1=0.401 R@5=0.762 R@10=0.882 R@20=0.970 | HJ: R@1=0.222 R@5=0.655 R@10=0.823 R@20=0.946
+       LV: R@1=0.531 R@5=0.931 R@10=0.996 R@20=1.000 | LJ: R@1=0.544 R@5=0.937 R@10=0.998 R@20=1.000
+       Baseline R@10: HV=0.393 HJ=0.744 LV=0.331 LJ=0.236
+       Δ vs Baseline: HV=+0.490 HJ=+0.079 LV=+0.665 LJ=+0.762
+       KL_HV=3.5304 | KL_HJ=3.5012
+
+Epoch 14/100

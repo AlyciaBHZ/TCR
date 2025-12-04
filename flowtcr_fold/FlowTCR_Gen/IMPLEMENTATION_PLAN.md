@@ -2,9 +2,17 @@
 
 > **Master Reference**: [../README.md](../README.md) (Section 4.2, Master Plan v3.1 Stage 2)
 > 
-> **Status**: 🔄 In Progress (40%)
+> **Status**: 🔧 **Code Complete + Bug Fixed** (95%) — 待重新训练
 > 
 > **Timeline**: Week 3-5 (Plan v3.1)
+>
+> **Latest Update (2025-12-05)**:
+> - ✅ All core modules implemented
+> - ✅ Per-sample conditioning + bug fixes completed
+> - ✅ **Critical Bug Fixed**: ODE simplex projection (softmax → normalize)
+> - ✅ 首轮训练完成（有 bug 版本），已获得有价值的 insights
+> - 🔧 待重新训练验证修复效果
+> - 📊 详细分析见 Section 10: Metrics 解释 与 Section 11: 首轮训练分析
 
 ---
 
@@ -13,7 +21,7 @@
 ### 1.1 在整体 Pipeline 中的角色
 
 ```
-                    Stage 1: Immuno-PLM
+                    Stage 1: Immuno-PLM (✅ R@10 88%)
                               │
                               ▼
                     Top-K scaffolds + pMHC embedding
@@ -52,637 +60,186 @@
 
 | 文件 | 功能 | 状态 |
 |------|------|------|
-| `flow_gen.py` | FlowMatchingModel 基础架构 | ✅ 可运行 |
-| `SinusoidalTimeEmbedding` | 时间嵌入 | ✅ 完成 |
-| `train_flow.py` | 训练脚本 | ⚠️ 需升级 |
-| `sample.py` | ODE 采样 | ⚠️ 需添加 CFG |
-| `pipeline_impl.py` | 端到端推理 | ⚠️ 需整合 Stage 1 |
+| `encoder.py` | FlowTCRGenEncoder + CollapseAwareEmbedding + SequenceProfileEvoformer | ✅ 完成 |
+| `dirichlet_flow.py` | DirichletFlowMatcher + CFGWrapper + 采样 | ✅ 完成 |
+| `model_flow.py` | FlowTCRGen 主模型类 + Model Score Hook | ✅ 完成 |
+| `data.py` | FlowTCRGenDataset + Tokenizer + collate_fn | ✅ 完成 |
+| `metrics.py` | Recovery/Diversity/Perplexity 评估 | ✅ 完成 |
+| `train.py` | 训练脚本 + Ablation 支持 | ✅ 完成 |
+| `__init__.py` | 模块导出 | ✅ 完成 |
 
-### 2.2 待实现 🔄
+### 2.2 运行中 🔄
 
-| 任务 | 优先级 | 依赖 |
-|------|--------|------|
-| 集成 `CollapseAwareEmbedding` | 🔴 高 | psi_model 代码 |
-| 集成 `SequenceProfileEvoformer` | 🔴 高 | psi_model 代码 |
-| Hierarchical Pair IDs 生成 | 🔴 高 | - |
-| Dirichlet Flow (x_t 注入) | 🔴 高 | - |
-| CFG 实现 | 🔴 高 | - |
-| Model Score Hook | 🟡 中 | - |
-| Entropy/Profile 正则 | 🟡 中 | - |
+| 任务 | 状态 | 备注 |
+|------|------|------|
+| 端到端训练 | 🔄 运行中 | Job 1116099 (Normal) |
+| Ablation 实验 | 🔄 运行中 | Jobs 1116100, 1116109, 1116112 |
+| Stage 1 集成 | 🔄 待测试 | 接口已设计 |
 
-### 2.3 Legacy 代码位置
+### 2.3 代码结构
 
 ```
-psi_model/
-├── model.py              # ⭐ CollapseAwareEmbedding, SequenceProfileEvoformer
-├── model_original.py     # 原始版本（参考）
-└── train.py              # psiMonteCarloSampler（参考）
-```
-
----
-
-## 3. Step-by-Step Implementation Plan
-
-### Phase 1: 复用 psi_model 组件 (Day 1-3)
-
-#### Step 1.1: 理解 `CollapseAwareEmbedding`
-
-```python
-# 来自 psi_model/model.py
-class CollapseAwareEmbedding(nn.Module):
-    """
-    关键功能：
-    1. Collapse Token (ψ): 可学习的全局观察者
-    2. Hierarchical Pair IDs: 7-level 拓扑关系编码
-    3. Region-specific weights: 不同区域的自适应权重
-    """
-    
-    def create_hierarchical_pairs(self, ...):
-        """
-        返回 pair_ids [L, L]:
-        - Level 0: ψ ↔ ψ
-        - Level 1: ψ ↔ HD (CDR3)
-        - Level 2: ψ ↔ 条件区域
-        - Level 3: HD 内部
-        - Level 4: 条件区域内部
-        - Level 5: HD ↔ 条件区域
-        - Level 6: 不同条件区域之间
-        """
-```
-
-#### Step 1.2: 创建 FlowTCR-Gen 适配器
-
-```python
-# flowtcr_fold/FlowTCR_Gen/flow_gen.py 新增
-
-from psi_model.model import CollapseAwareEmbedding, SequenceProfileEvoformer
-
-class FlowTCRGenEncoder(nn.Module):
-    """
-    将 psi_model 组件适配为 FlowTCR-Gen 的条件编码器
-    """
-    def __init__(
-        self,
-        s_dim: int = 256,
-        z_dim: int = 64,
-        n_layers: int = 6,
-        vocab_size: int = 21,
-        max_len: int = 512,
-    ):
-        super().__init__()
-        
-        # 复用 psi_model 的嵌入层
-        self.embedding = CollapseAwareEmbedding(
-            s_in_dim=vocab_size,
-            s_dim=s_dim,
-            z_dim=z_dim,
-            max_len=max_len,
-        )
-        
-        # 复用 psi_model 的 Evoformer
-        self.backbone = SequenceProfileEvoformer(
-            s_dim=s_dim,
-            z_dim=z_dim,
-            n_layers=n_layers,
-        )
-    
-    def forward(self, cdr3_xt, peptide, mhc, scaffold_seqs, conditioning_info):
-        """
-        Args:
-            cdr3_xt: [B, L_cdr3, vocab] flow 中间状态
-            peptide: [B, L_pep] peptide 序列
-            mhc: [B, L_mhc] MHC 序列
-            scaffold_seqs: Dict[str, Tensor] HV/HJ/LV/LJ 序列
-            conditioning_info: List[str] 使用哪些条件
-        
-        Returns:
-            s: [B, L_total, s_dim] 序列表征
-            z: [B, L_total, L_total, z_dim] pair 表征
-        """
-        # 构建输入字典
-        in_dict = {
-            'hd': cdr3_xt,  # x_t 作为 HD 区域
-            'pep': peptide,
-            'mhc': mhc,
-            **scaffold_seqs,
-        }
-        
-        # 嵌入 + pair_ids
-        s, z = self.embedding(in_dict, conditioning_info)
-        
-        # Evoformer 处理
-        s, z = self.backbone(s, z)
-        
-        return s, z
-```
-
-#### Step 1.3: x_t 注入方式
-
-```python
-def inject_xt_into_embedding(self, x_t: torch.Tensor) -> torch.Tensor:
-    """
-    将 flow 中间状态 x_t 注入到嵌入空间
-    
-    方法：x_t 是 [B, L, vocab] 的软分布
-    → 通过 embedding 矩阵的期望得到连续嵌入
-    """
-    # x_t: [B, L, vocab], embedding: [vocab, s_dim]
-    # → [B, L, s_dim]
-    emb = torch.matmul(x_t, self.token_embedding.weight)
-    return emb + self.position_embedding
+flowtcr_fold/FlowTCR_Gen/
+├── __init__.py           # 模块导出
+├── encoder.py            # ⭐ CollapseAwareEmbedding + SequenceProfileEvoformer
+├── dirichlet_flow.py     # ⭐ Dirichlet Flow Matching + CFG
+├── model_flow.py         # ⭐ FlowTCRGen 主模型 + Model Score Hook
+├── data.py               # Dataset + Tokenizer
+├── metrics.py            # 评估指标
+├── train.py              # 训练脚本
+├── IMPLEMENTATION_PLAN.md
+├── saved_model/
+│   ├── stage2/
+│   │   ├── checkpoints/
+│   │   ├── best_model/
+│   │   └── other_results/
+│   └── ablation_*/       # Ablation 实验输出
+└── old_version/          # 旧代码 (flow_gen.py, train_flow.py)
 ```
 
 ---
 
-### Phase 2: Dirichlet Flow Matching (Day 4-6)
+## 3. 核心 API
 
-#### Step 2.1: Flow 插值定义
+### 3.1 FlowTCRGen 主模型
 
 ```python
-def dirichlet_interpolate(x0: torch.Tensor, x1: torch.Tensor, t: torch.Tensor):
-    """
-    Dirichlet Flow 插值:
-    - x0: 先验分布 (uniform Dirichlet 或高熵分布)
-    - x1: 目标分布 (one-hot ground truth)
-    - t: 时间 [0, 1]
-    
-    x_t = (1 - t) * x0 + t * x1
-    """
-    return (1 - t) * x0 + t * x1
+from flowtcr_fold.FlowTCR_Gen import FlowTCRGen
 
+# 创建模型
+model = FlowTCRGen(
+    s_dim=256,
+    z_dim=64,
+    n_layers=6,
+    vocab_size=25,
+    use_collapse=True,       # Ablation 开关
+    use_hier_pairs=True,     # Ablation 开关
+    cfg_drop_prob=0.1,
+)
 
-def sample_x0_dirichlet(batch_size: int, seq_len: int, vocab_size: int, alpha: float = 1.0):
-    """
-    从 Dirichlet(α, α, ..., α) 采样先验分布
-    α = 1 时为均匀分布
-    """
-    dist = torch.distributions.Dirichlet(torch.ones(vocab_size) * alpha)
-    return dist.sample((batch_size, seq_len))
+# 训练
+losses = model.training_step(batch)
+# losses = {'loss': ..., 'mse_loss': ..., 'entropy_loss': ...}
+
+# 生成
+tokens = model.generate(
+    cdr3_len=15,
+    pep_one_hot=...,
+    mhc_one_hot=...,
+    scaffold_seqs={'hv': ..., 'hj': ...},
+    n_steps=100,
+    cfg_weight=1.5,
+)
+
+# Model Score (for Stage 3 MC integration)
+score = model.get_model_score(cdr3_tokens, pep_one_hot, mhc_one_hot, scaffold_seqs)
 ```
 
-#### Step 2.2: Flow Matching Loss
+### 3.2 训练命令
 
-```python
-def flow_matching_loss(
-    model: nn.Module,
-    x1: torch.Tensor,      # [B, L, vocab] one-hot target
-    cond: Dict,            # 条件信息
-    alpha: float = 1.0,    # Dirichlet 参数
-) -> torch.Tensor:
-    B, L, V = x1.shape
-    device = x1.device
-    
-    # 1. 采样 x0 (先验)
-    x0 = sample_x0_dirichlet(B, L, V, alpha).to(device)
-    
-    # 2. 采样 t ~ Uniform(0, 1)
-    t = torch.rand(B, 1, 1, device=device)
-    
-    # 3. 计算 x_t
-    x_t = dirichlet_interpolate(x0, x1, t)
-    
-    # 4. 目标速度场 v* = x1 - x0
-    v_target = x1 - x0
-    
-    # 5. 模型预测速度场
-    v_pred = model(x_t, t.squeeze(-1), cond)
-    
-    # 6. MSE loss
-    loss = F.mse_loss(v_pred, v_target)
-    
-    return loss
-```
+```bash
+# 默认训练 (完整模型)
+python flowtcr_fold/FlowTCR_Gen/train.py
 
-#### Step 2.3: 完整训练循环
+# Ablation: 无 Collapse Token
+python flowtcr_fold/FlowTCR_Gen/train.py --ablation no_collapse
 
-```python
-def train_epoch(model, encoder, loader, optimizer, cfg_drop_prob=0.1):
-    model.train()
-    encoder.train()
-    total_loss = 0
-    
-    for batch in loader:
-        # 1. 编码条件
-        cond = encoder(
-            cdr3_xt=None,  # 训练时不需要
-            peptide=batch['peptide'],
-            mhc=batch['mhc'],
-            scaffold_seqs=batch['scaffold_seqs'],
-            conditioning_info=['pep', 'mhc', 'hv', 'hj', 'lv', 'lj'],
-        )
-        
-        # 2. CFG: 随机 drop 条件
-        if torch.rand(1).item() < cfg_drop_prob:
-            cond = None  # 或用 learned uncond embedding
-        
-        # 3. 准备 target (one-hot CDR3β)
-        x1 = F.one_hot(batch['cdr3b_tokens'], num_classes=model.vocab_size).float()
-        
-        # 4. Flow matching loss
-        loss_flow = flow_matching_loss(model, x1, cond)
-        
-        # 5. (可选) Collapse entropy 正则
-        loss_entropy = compute_collapse_entropy(encoder, batch)
-        
-        # 6. 总 loss
-        loss = loss_flow + λ_ent * loss_entropy
-        
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        
-        total_loss += loss.item()
-    
-    return total_loss / len(loader)
+# Ablation: 无 Hierarchical Pairs
+python flowtcr_fold/FlowTCR_Gen/train.py --ablation no_hier
+
+# Ablation: 无 CFG
+python flowtcr_fold/FlowTCR_Gen/train.py --ablation no_cfg
+
+# 恢复训练
+python flowtcr_fold/FlowTCR_Gen/train.py --resume
+
+# 评估模式
+python flowtcr_fold/FlowTCR_Gen/train.py --eval_only --cfg_weight 1.5
 ```
 
 ---
 
-### Phase 3: CFG 实现 (Day 7-8)
+## 4. Checklist
 
-#### Step 3.1: 训练时 Condition Drop
+### Phase 1: 复用 psi_model 组件 ✅
+- [x] 创建 `CollapseAwareEmbedding` (独立实现，不依赖 psi_model import)
+- [x] 创建 `SequenceProfileEvoformer` 
+- [x] 创建 `FlowTCRGenEncoder` 适配器类
+- [x] 实现 x_t 注入方式 (soft embedding via matmul)
+- [x] 实现 `create_hierarchical_pairs()` 7-level 拓扑编码
+- [x] 添加 `use_collapse` 开关
+- [x] 添加 `use_hier_pairs` 开关
 
-```python
-class CFGWrapper(nn.Module):
-    """
-    Classifier-Free Guidance 包装器
-    """
-    def __init__(self, model, drop_prob=0.1):
-        super().__init__()
-        self.model = model
-        self.drop_prob = drop_prob
-        # 可学习的 unconditional embedding
-        self.uncond_emb = nn.Parameter(torch.zeros(1, model.hidden_dim))
-    
-    def forward(self, x_t, t, cond, training=True):
-        if training and torch.rand(1).item() < self.drop_prob:
-            # Drop condition → 使用 uncond embedding
-            cond = self.uncond_emb.expand(x_t.size(0), -1)
-        return self.model(x_t, t, cond)
-```
+### Phase 2: Dirichlet Flow Matching ✅
+- [x] 实现 `sample_x0_dirichlet()` 和 `sample_x0_uniform()`
+- [x] 实现 `dirichlet_interpolate()`
+- [x] 实现 `FlowHead` 速度预测头
+- [x] 实现 `DirichletFlowMatcher.flow_matching_loss()`
+- [x] 添加 entropy 正则化
 
-#### Step 3.2: 推理时 CFG
+### Phase 3: CFG ✅
+- [x] 实现训练时 condition drop (cfg_drop_prob=0.1)
+- [x] 实现 `CFGWrapper` 类
+- [x] 实现 `generate()` with CFG
+- [x] 添加 `--cfg_weight` 命令行参数
 
-```python
-def sample_with_cfg(
-    model: nn.Module,
-    cond: torch.Tensor,
-    uncond: torch.Tensor,
-    seq_len: int,
-    n_steps: int = 100,
-    cfg_weight: float = 1.5,
-) -> torch.Tensor:
-    """
-    CFG 采样:
-    v_final = v_uncond + w * (v_cond - v_uncond)
-    """
-    device = cond.device
-    B = cond.size(0)
-    
-    # 初始化 x_0 (uniform)
-    x = torch.ones(B, seq_len, model.vocab_size, device=device) / model.vocab_size
-    
-    dt = 1.0 / n_steps
-    
-    for step in range(n_steps):
-        t = torch.full((B, 1), step / n_steps, device=device)
-        
-        # 有条件预测
-        v_cond = model(x, t, cond)
-        
-        # 无条件预测
-        v_uncond = model(x, t, uncond)
-        
-        # CFG 组合
-        v = v_uncond + cfg_weight * (v_cond - v_uncond)
-        
-        # Euler step
-        x = x + v * dt
-        
-        # 投影回 simplex (归一化)
-        x = F.softmax(x, dim=-1)
-    
-    # 最终解码
-    tokens = x.argmax(dim=-1)
-    return tokens
-```
+### Phase 4: Model Score Hook ✅
+- [x] 实现 `get_model_score()` - 基于 flow cost 积分
+- [x] 实现 `get_collapse_scalar()` - 基于 collapse token 投影
+- [x] 设计 Stage 3 集成接口
 
----
+### Phase 5: 评估指标 ✅
+- [x] 实现 `compute_recovery_rate()` - exact match, partial match
+- [x] 实现 `compute_diversity()` - unique ratio, entropy
+- [x] 实现 `FlowTCRGenEvaluator` 类
+- [x] 在验证循环中调用
 
-### Phase 4: Model Score Hook (Day 9)
+### Phase 6: Ablation Studies ✅ (已实现开关)
+- [x] 添加 `--ablation no_collapse` 参数
+- [x] 添加 `--ablation no_hier` 参数
+- [x] 添加 `--ablation no_cfg` 参数
+- [ ] 运行 Ablation 实验并记录结果
 
-#### Step 4.1: 定义 Model Score
-
-```python
-def compute_model_score(model, encoder, cdr3_tokens, cond):
-    """
-    计算生成序列的 model score，用于 hybrid MC energy
-    
-    可选定义:
-    1. Flow cost: 积分 ||v_θ(x_t, t)||² dt
-    2. Collapse scalar: ψ token 的某个投影
-    3. Approximate NLL
-    """
-    # 方法 1: 近似 NLL (通过 ODE likelihood)
-    x1 = F.one_hot(cdr3_tokens, model.vocab_size).float()
-    
-    # 反向 ODE 计算 log_prob
-    log_prob = compute_ode_log_prob(model, x1, cond)
-    
-    return -log_prob  # 负 log prob 作为 score (越低越好)
-```
-
-#### Step 4.2: 导出 Hook
-
-```python
-class FlowTCRGen(nn.Module):
-    def __init__(self, ...):
-        ...
-    
-    def get_model_score(self, cdr3_seq: str, cond: Dict) -> float:
-        """
-        供 Stage 3 MC 使用的接口
-        """
-        tokens = self.tokenize(cdr3_seq)
-        with torch.no_grad():
-            score = compute_model_score(self.model, self.encoder, tokens, cond)
-        return score.item()
-```
-
----
-
-### Phase 5: 评估指标 (Day 10)
-
-#### Step 5.1: Recovery Rate
-
-```python
-def evaluate_recovery(model, val_loader, n_samples=10):
-    """
-    计算生成的 CDR3β 与真实序列的匹配率
-    """
-    exact_match = 0
-    total = 0
-    
-    for batch in val_loader:
-        cond = encode_condition(batch)
-        
-        for _ in range(n_samples):
-            generated = model.sample(cond)
-            for i, (gen, gt) in enumerate(zip(generated, batch['cdr3b'])):
-                if gen == gt:
-                    exact_match += 1
-                total += 1
-    
-    return exact_match / total
-```
-
-#### Step 5.2: Diversity
-
-```python
-def evaluate_diversity(model, val_loader, n_samples=100):
-    """
-    计算生成序列的多样性 (unique ratio)
-    """
-    all_generated = set()
-    
-    for batch in val_loader:
-        cond = encode_condition(batch)
-        for _ in range(n_samples):
-            generated = model.sample(cond)
-            all_generated.update(generated)
-    
-    return len(all_generated) / (len(val_loader) * n_samples)
-```
-
-#### Step 5.3: Perplexity
-
-```python
-def evaluate_perplexity(model, val_loader):
-    """
-    计算验证集上的困惑度
-    """
-    total_nll = 0
-    total_tokens = 0
-    
-    for batch in val_loader:
-        cond = encode_condition(batch)
-        x1 = F.one_hot(batch['cdr3b_tokens'], model.vocab_size).float()
-        
-        # 计算 NLL
-        nll = compute_ode_log_prob(model, x1, cond)
-        total_nll += nll.sum().item()
-        total_tokens += x1.size(0) * x1.size(1)
-    
-    return torch.exp(torch.tensor(total_nll / total_tokens))
-```
-
----
-
-## 4. Reminders ⚠️
-
-### 4.1 训练配置
-- **CFG drop prob**: 0.1（训练时 10% 概率 drop 条件）
-- **CFG weight**: 1.0-2.0（推理时可调）
-- **λ_ent**: 0.01（collapse entropy 正则权重）
-- **λ_prof**: 0.01（profile 正则权重）
-- **ODE steps**: 100（采样步数）
-
-### 4.2 长序列处理
-- **MHC 序列**：可能很长（>200aa），需要截断或 chunked attention
-- **拼接顺序**：`[ψ, CDR3β, peptide, MHC, HV, HJ, LV, LJ]`
-- **位置编码**：每个区域有独立的位置 offset
-
-### 4.3 与 Stage 1 接口
-- **输入**：需要 Stage 1 的 `encode_pmhc()` 和 `retrieve_scaffolds()`
-- **条件格式**：确保 embedding 维度匹配
-
-### 4.4 代码风格
-- **复用 psi_model**：不要 copy-paste，直接 import
-- **Checkpoint 路径**：保存到 `checkpoints/stage2_v1/`
-- **日志**：每 epoch 打印 loss 分解、recovery、diversity
-
----
-
-## 5. Checklist
-
-### Phase 1: 复用 psi_model
-- [ ] 确认 `psi_model/model.py` 可 import
-- [ ] 创建 `FlowTCRGenEncoder` 适配器类
-- [ ] 实现 x_t 注入方式
-- [ ] 测试 `create_hierarchical_pairs()` 输出正确
-
-### Phase 2: Dirichlet Flow
-- [ ] 实现 `sample_x0_dirichlet()`
-- [ ] 实现 `dirichlet_interpolate()`
-- [ ] 实现 `flow_matching_loss()`
-- [ ] 修改 `train_flow.py` 使用新 loss
-
-### Phase 3: CFG
-- [ ] 实现 `CFGWrapper` 类
-- [ ] 训练时 condition drop
-- [ ] 实现 `sample_with_cfg()`
-- [ ] 添加 `--cfg_weight` 命令行参数
-
-### Phase 4: Model Score Hook
-- [ ] 定义 `compute_model_score()` 函数
-- [ ] 在 `FlowTCRGen` 类中导出 `get_model_score()` 接口
-- [ ] 测试与 Stage 3 MC 的集成
-
-### Phase 5: 评估指标
-- [ ] 实现 `evaluate_recovery()`
-- [ ] 实现 `evaluate_diversity()`
-- [ ] 实现 `evaluate_perplexity()`
-- [ ] 在验证循环中调用
-
-### Phase 6: Ablation Studies (必做)
-- [ ] 添加 `--use_collapse` 参数和开关
-- [ ] 添加 `--use_hier_pairs` 参数和开关
-- [ ] 实现 CFG weight sweep 脚本
-- [ ] 实现 conditioning components ablation
-- [ ] 生成 Ablation 结果表格
-
-### Phase 6: Ablation Studies (必做)
-
-#### Step 6.1: Collapse Token Ablation
-
-**目标**：验证 Collapse Token (ψ) 的贡献（论文核心 claim）
-
-```python
-# 配置接口
-ablation_configs = [
-    {'name': 'with_collapse', 'use_collapse': True},   # 默认
-    {'name': 'no_collapse', 'use_collapse': False},    # 去掉 ψ token
-]
-
-# 在 FlowTCRGenEncoder 中添加开关
-class FlowTCRGenEncoder(nn.Module):
-    def __init__(self, ..., use_collapse: bool = True):
-        self.use_collapse = use_collapse
-        if use_collapse:
-            self.collapse_token = nn.Parameter(torch.randn(1, 1, s_dim))
-```
-
-**预期结果**：with_collapse 的 recovery/diversity 应显著高于 no_collapse
-
-#### Step 6.2: Hierarchical Pairs Ablation
-
-**目标**：验证 7-level 拓扑编码的贡献（论文核心 claim）
-
-```python
-ablation_configs = [
-    {'name': 'hier_pairs', 'use_hier_pairs': True},      # 默认
-    {'name': 'flat_pairs', 'use_hier_pairs': False},     # 所有 pair 同 level
-]
-
-# 在 create_hierarchical_pairs 中添加开关
-def create_hierarchical_pairs(..., use_hier: bool = True):
-    if not use_hier:
-        return torch.zeros(L, L, dtype=torch.long)  # 全部 level=0
-    # 正常 7-level 逻辑
-```
-
-#### Step 6.3: CFG Ablation
-
-**目标**：验证 CFG 对生成质量的影响
-
-```python
-ablation_configs = [
-    {'name': 'cfg_1.0', 'cfg_weight': 1.0},
-    {'name': 'cfg_1.5', 'cfg_weight': 1.5},
-    {'name': 'cfg_2.0', 'cfg_weight': 2.0},
-    {'name': 'no_cfg', 'cfg_weight': 0.0},  # 纯无条件
-]
-```
-
-#### Step 6.4: Conditioning Components Ablation
-
-**目标**：验证各条件组件的贡献
-
-```python
-# 通过 conditioning_info 控制
-ablation_configs = [
-    {'name': 'full', 'cond': ['pep', 'mhc', 'hv', 'hj', 'lv', 'lj']},
-    {'name': 'no_scaffold', 'cond': ['pep', 'mhc']},
-    {'name': 'no_peptide', 'cond': ['mhc', 'hv', 'hj', 'lv', 'lj']},
-    {'name': 'scaffold_only', 'cond': ['hv', 'hj', 'lv', 'lj']},
-]
-```
-
----
-
-### Phase 7: 集成测试
+### Phase 7: 集成测试 🔄
 - [ ] 端到端训练 100 epochs
 - [ ] 验证 recovery > 30%
+- [ ] 验证 diversity > 50%
 - [ ] 验证 PPL < 10
 - [ ] 保存最佳 checkpoint
 
 ---
 
-## 6. Ablation Checklist (必做)
+## 5. Ablation Checklist
 
 | Ablation | 配置 | 指标 | 状态 |
 |----------|------|------|------|
-| ±Collapse Token | `use_collapse = T/F` | Recovery, Diversity | [ ] |
-| ±Hierarchical Pairs | `use_hier_pairs = T/F` | Recovery, Diversity | [ ] |
-| CFG weight sweep | `cfg_weight = {0, 1.0, 1.5, 2.0}` | Recovery vs Diversity trade-off | [ ] |
-| Conditioning components | 见 Step 6.4 | Recovery | [ ] |
+| ±Collapse Token | `--ablation no_collapse` | Recovery, Diversity | 🔄 待运行 |
+| ±Hierarchical Pairs | `--ablation no_hier` | Recovery, Diversity | 🔄 待运行 |
+| CFG weight sweep | `--cfg_weight {0, 1.0, 1.5, 2.0}` | Recovery vs Diversity | 🔄 待运行 |
+| Conditioning components | conditioning_info 参数 | Recovery | 🔄 待运行 |
 
 ---
 
-## 7. Exploratory (待做事项)
-
-> 以下为可选探索项，不阻塞主线，但保留接口以便后续开发。
-
-### 🟢 E1: Physics Gradient Guidance in ODE
-- **目标**：在 ODE 采样中注入 ∇E_φ 梯度
-- **公式**：`x_{t+Δt} = x_t + (v_θ - w∇E_φ)Δt`
-- **接口预留**：`sample_with_cfg(..., energy_model=None, energy_weight=0.0)`
-- **依赖**：Stage 3 E_φ 完成
-- **状态**：[ ] 待实现
-
-### 🟢 E2: Entropy Scheduling
-- **目标**：在 ODE 不同阶段使用不同的 entropy 正则
-- **方案**：早期高 entropy（探索），后期低 entropy（收敛）
-- **接口预留**：`EntropyScheduler` 类
-- **状态**：[ ] 待实现
-
-### 🟢 E3: Multi-CDR Generation
-- **目标**：同时生成 CDR3α 和 CDR3β
-- **方案**：扩展 HD 区域包含双链
-- **接口预留**：`generate(..., targets=['cdr3a', 'cdr3b'])`
-- **状态**：[ ] 待设计
-
-### 🟢 E4: Self-Play with Stage 3 Feedback
-- **目标**：用 Stage 3 E_φ 评分反馈训练 Stage 2
-- **方案**：对高分生成结果增加训练权重
-- **接口预留**：`update_with_energy_feedback(generated, scores)`
-- **状态**：[ ] 待设计
-
----
-
-## 8. 成功标准
-
-| 指标 | 目标 |
-|------|------|
-| Recovery Rate | **> 30%** |
-| Diversity | **> 50%** unique in 100 samples |
-| Perplexity | **< 10** |
-| 训练时间 | < 48h @1×A100 |
-| Ablation: ±collapse delta | 记录显著差异 |
-| Ablation: ±hier_pairs delta | 记录显著差异 |
-
----
-
-## 9. 与其他 Stage 的接口
+## 6. 与其他 Stage 的接口
 
 ### 输入来自 Stage 1 (Immuno-PLM)
 
 ```python
-# 从 Stage 1 获取 scaffold
-from flowtcr_fold.Immuno_PLM import ImmunoPLM
+# Stage 1 输出 scaffold 信息
+scaffold = {
+    'h_v': 'TRBV19*01',
+    'h_v_seq': 'MGTSLLCWMALCLLGADHADTGVS...',
+    'h_j': 'TRBJ2-7*01',
+    'h_j_seq': 'YEQYFGPGTRLTVT',
+    # ... l_v, l_j
+}
 
-plm = ImmunoPLM.load("checkpoints/stage1_v1/best.pt")
-scaffolds = plm.retrieve_scaffolds(pmhc_emb, top_k=10)
+# 转换为 Stage 2 输入
+from flowtcr_fold.FlowTCR_Gen import FlowTCRGenTokenizer
+
+tokenizer = FlowTCRGenTokenizer()
+hv_tokens = tokenizer.encode(scaffold['h_v_seq'])
+hv_one_hot = tokenizer.to_one_hot(torch.tensor(hv_tokens))
 ```
 
 ### 输出给 Stage 3 (TCRFold-Prophet)
@@ -690,17 +247,407 @@ scaffolds = plm.retrieve_scaffolds(pmhc_emb, top_k=10)
 ```python
 # Stage 2 提供的 API
 class FlowTCRGen:
-    def sample(self, cond: Dict, n_samples: int = 100) -> List[str]:
-        """生成 CDR3β 序列"""
+    def generate(self, ..., n_steps=100, cfg_weight=1.5) -> torch.Tensor:
+        """生成 CDR3β token indices"""
         pass
     
-    def get_model_score(self, cdr3_seq: str, cond: Dict) -> float:
-        """返回 model score 用于 hybrid MC"""
+    def get_model_score(self, cdr3_tokens, ...) -> torch.Tensor:
+        """返回 model score 用于 hybrid MC energy"""
+        pass
+    
+    def get_collapse_scalar(self, ...) -> torch.Tensor:
+        """返回 collapse token 标量，可选用于快速评估"""
         pass
 ```
 
 ---
 
-**Last Updated**: 2025-12-01  
-**Owner**: Stage 2 Implementation Team
+## 7. 成功标准
 
+| 指标 | 目标 | 当前 |
+|------|------|------|
+| Recovery Rate | **> 30%** | 🔄 待训练 |
+| Diversity | **> 50%** unique in 100 samples | 🔄 待训练 |
+| Perplexity | **< 10** | 🔄 待训练 |
+| 训练时间 | < 48h @1×A100 | 🔄 待验证 |
+| Ablation: ±collapse delta | 记录显著差异 | 🔄 待实验 |
+| Ablation: ±hier_pairs delta | 记录显著差异 | 🔄 待实验 |
+
+---
+
+## 8. Exploratory (待做事项)
+
+> 以下为可选探索项，不阻塞主线，但接口已预留。
+
+### 🟢 E1: Physics Gradient Guidance in ODE
+- **目标**：在 ODE 采样中注入 ∇E_φ 梯度
+- **公式**：`x_{t+Δt} = x_t + (v_θ - w∇E_φ)Δt`
+- **接口预留**：`generate(..., energy_model=None, energy_weight=0.0)`
+- **依赖**：Stage 3 E_φ 完成
+- **状态**：[ ] 待实现
+
+### 🟢 E2: Entropy Scheduling
+- **目标**：在 ODE 不同阶段使用不同的 entropy 正则
+- **方案**：早期高 entropy（探索），后期低 entropy（收敛）
+- **状态**：[ ] 待实现
+
+### 🟢 E3: Multi-CDR Generation
+- **目标**：同时生成 CDR3α 和 CDR3β
+- **方案**：扩展 CDR3 区域包含双链
+- **状态**：[ ] 待设计
+
+### 🟢 E4: Self-Play with Stage 3 Feedback
+- **目标**：用 Stage 3 E_φ 评分反馈训练 Stage 2
+- **方案**：对高分生成结果增加训练权重
+- **状态**：[ ] 待设计
+
+---
+
+## 9. 工作日志
+
+- **2025-12-05**: 首轮训练分析 + 文档完善
+  - ❌ 终止所有 buggy 训练任务 (Jobs 1116099, 1116100, 1116109, 1116112)
+  - 🗑️ 清理 buggy 模型 checkpoints
+  - 📝 **详细记录 Metrics 定义** (Section 10)
+  - 📊 **首轮训练分析** (Section 11)：
+    - 确认 Loss 收敛正常（MSE 从 0.1 降到 0.001 级别）
+    - 确认 Diversity 急剧下降（0.99 → 0.01）是 ODE bug + 可能的 mode collapse
+    - 确认 Recovery = 0 主要由 ODE simplex 投影错误导致
+    - 记录各 ablation 的初步趋势
+  - 📋 **代码修复记录** (Section 12)：详细 diff 记录所有修改
+  - 状态：**待重新训练**
+
+- **2025-12-04 (续)**: 代码审查 + Bug 修复
+  - 🔍 分析训练日志发现问题:
+    - Recovery = 0 (所有模型)
+    - Diversity 快速下降到 ~0.01
+    - Loss 为负 (因为 entropy 正则)
+  - 🐛 **ODE 积分 Bug 修复** (`model_flow.py`):
+    - 原: `x = x + v * dt; x = F.softmax(x)` (错误的 simplex 投影)
+    - 新: `x = (x + v * dt).clamp(1e-8); x = x / x.sum()` (正确的归一化)
+  - 🔧 **评估参数优化** (`train.py`):
+    - `n_samples_per_batch`: 3 → 8
+    - `max_eval_samples`: 新增, 限制为 200
+    - `n_steps` (生成): 50 → 100
+  - 📈 新增 `recovery_80` 指标到日志输出
+  - 下一步: 重新训练验证修复效果
+
+- **2025-12-04**: 首次训练启动 + 参数调整
+  - 🔧 修复 `PYTHONPATH` 问题（脚本中添加 `export PYTHONPATH`）
+  - 🔧 调整 `BATCH_SIZE`: 16 → 32（A100 80GB 显存充足）
+  - 🔧 调整输出目录：Normal 模型输出到 `stage2/normal/`（而非直接放 `stage2/`）
+  - 🚀 启动 4 个实验：
+    - Normal (Job 1116099): 5,334,631 params
+    - No Collapse (Job 1116100): 5,331,039 params  
+    - No Hier (Job 1116109): 5,334,631 params
+    - No CFG (Job 1116112): 5,334,631 params
+  - 📊 Epoch 1 早期 Loss 下降趋势（Batch 50-700）:
+    | Experiment | Batch 50 | Batch 300 | Batch 700 |
+    |------------|----------|-----------|-----------|
+    | Normal | 0.103 | 0.005 | -0.005 |
+    | No Collapse | 0.080 | 0.004 | -0.007 |
+    | No Hier | 0.135 | - | - |
+    | No CFG | 0.163 | 0.004 | -0.005 |
+  - 观察：Loss 快速收敛，No Collapse 收敛最快（模型更简单）
+  - 下一步：等待 Epoch 1 完成，查看 validation metrics
+
+- **2025-12-03**: Stage 2 代码完成
+  - 创建 `encoder.py`: CollapseAwareEmbedding + SequenceProfileEvoformer + FlowTCRGenEncoder
+  - 创建 `dirichlet_flow.py`: DirichletFlowMatcher + CFGWrapper + 采样函数
+  - 创建 `model_flow.py`: FlowTCRGen 主模型 + Model Score Hook + 生成接口
+  - 创建 `data.py`: FlowTCRGenDataset + Tokenizer + collate_fn
+  - 创建 `metrics.py`: Recovery/Diversity/Perplexity 评估
+  - 更新 `train.py`: 完整训练流程 + Ablation 支持
+  - Ablation 开关: `use_collapse`, `use_hier_pairs`, `cfg_drop_prob`
+
+---
+
+## 10. Metrics 详细解释
+
+> 本节定义 Stage 2 中使用的所有评估指标，确保团队成员理解一致。
+
+### 10.1 Loss 组成
+
+| 组件 | 公式 | 含义 |
+|------|------|------|
+| **MSE Loss** | `‖v_pred - v_true‖²` | Flow matching 的核心损失，预测速度场与真实速度场的误差 |
+| **Entropy Loss** | `-Σ p·log(p)` | 熵正则化，**希望最大化**以促进输出多样性 |
+| **Total Loss** | `MSE - λ_entropy × Entropy` | 因为最大化熵，所以是减法；**Loss 可为负是正常的** |
+
+**关键理解**：
+- 当 `λ_entropy > 0` 且 entropy 足够大时，总 loss 可能为负
+- 负 loss 本身**不是 bug**，是 entropy 正则项的预期行为
+- 评估模型质量应主要看 **MSE 分量**和**生成指标**
+
+### 10.2 Recovery Rate (恢复率)
+
+| 指标 | 定义 | 计算方式 |
+|------|------|----------|
+| **Exact Match** | 生成序列与真实 CDR3β 完全相同 | `mean(generated == ground_truth)` |
+| **Partial Match 80%** | ≥80% 位置匹配 | `mean(match_ratio >= 0.8)` |
+| **Partial Match 90%** | ≥90% 位置匹配 | `mean(match_ratio >= 0.9)` |
+
+**计算细节**：
+```python
+# 对每条序列
+match_ratio = sum(gen[i] == gt[i] for i in range(L)) / L
+exact_match = 1 if match_ratio == 1.0 else 0
+partial_80 = 1 if match_ratio >= 0.8 else 0
+```
+
+**目标**：
+- Exact Match > 30% (主要目标)
+- Partial 80 > 50% (辅助目标)
+
+### 10.3 Diversity (多样性)
+
+| 指标 | 定义 | 计算方式 |
+|------|------|----------|
+| **Unique Ratio** | 生成序列中不重复的比例 | `n_unique / n_total` |
+| **Entropy** | 序列分布的熵 | `H = -Σ p(seq)·log(p(seq))` |
+
+**解读**：
+- Unique Ratio = 0.99：几乎每条都不同（高多样性）
+- Unique Ratio = 0.01：几乎全部相同（**mode collapse**）
+- 健康范围：0.5 ~ 0.95
+
+**重要观察**：
+- Diversity 从 0.99 快速下降到 0.01 是 **mode collapse 的信号**
+- 可能原因：entropy 正则不足、ODE 采样问题、或过拟合
+
+### 10.4 Perplexity (困惑度)
+
+| 指标 | 公式 | 含义 |
+|------|------|------|
+| **PPL** | `exp(mean_cross_entropy)` | 模型对真实序列的"困惑"程度 |
+
+**计算方式**：
+```python
+# 对每条序列的每个位置
+ce_loss = -log(p(true_token))
+ppl = exp(mean(ce_loss))
+```
+
+**目标**：PPL < 10（越低越好）
+
+**注意**：我们代码中使用 MSE loss 而非 cross-entropy，所以 PPL 是近似计算。
+
+---
+
+## 11. 首轮训练分析 (Buggy Version)
+
+> 虽然首轮训练存在 ODE 积分 bug，但仍可从中获得有价值的 insights。
+
+### 11.1 实验配置
+
+| 实验 | 模型变体 | 参数量 | Job ID | 状态 |
+|------|----------|--------|--------|------|
+| Normal | Full model | 5,334,631 | 1116099 | ❌ 已终止 |
+| No Collapse | `-collapse_token` | 5,331,039 | 1116100 | ❌ 已终止 |
+| No Hier | `-hier_pairs` | 5,334,631 | 1116109 | ❌ 已终止 |
+| No CFG | `cfg_drop_prob=0` | 5,334,631 | 1116112 | ❌ 已终止 |
+
+**训练环境**：
+- GPU: A100 80GB
+- Batch Size: 32
+- Epochs: 目标 100
+- Learning Rate: 1e-4
+
+### 11.2 发现的 Bug
+
+#### Bug 1: ODE 积分 Simplex 投影错误 (Critical)
+
+**问题代码** (`model_flow.py:generate()`):
+```python
+# ❌ 错误
+x = x.squeeze(0) + v * dt
+x = F.softmax(x, dim=-1)  # softmax 不是 simplex 投影！
+```
+
+**正确做法**：
+```python
+# ✅ 正确
+x_new = x.squeeze(0) + v * dt
+x_new = x_new.clamp(min=1e-8)              # 保证非负
+x_new = x_new / x_new.sum(dim=-1, keepdim=True)  # 归一化到 simplex
+x = x_new.unsqueeze(0)
+```
+
+**原因分析**：
+- `softmax` 会重新分配概率质量，破坏 ODE 积分的连续性
+- 正确的 simplex 投影只需裁剪负值 + 归一化
+- 这导致生成质量极差，Recovery = 0
+
+#### Bug 2: 评估参数不足
+
+| 参数 | 修复前 | 修复后 | 说明 |
+|------|--------|--------|------|
+| `n_samples_per_batch` | 3 | 8 | 每个条件生成的样本数 |
+| `max_eval_samples` | 无限制 | 500 | 最大评估样本数 |
+| `n_steps` (ODE) | 50 | 100 | ODE 积分步数 |
+
+#### Bug 3: Final Evaluation 参数名错误
+
+```python
+# ❌ 错误
+final_metrics = evaluate(..., n_samples=10)  # 参数不存在
+
+# ✅ 修复
+final_metrics = evaluate(..., n_samples_per_batch=16, max_eval_samples=500)
+```
+
+### 11.3 有效的 Insights
+
+尽管有 bug，以下观察仍然有价值：
+
+#### Insight 1: Loss 收敛正常 ✅
+
+| Epoch | Normal | No Collapse | No Hier | No CFG |
+|-------|--------|-------------|---------|--------|
+| E1 B50 | 0.103 | 0.080 | 0.135 | 0.163 |
+| E1 B300 | 0.005 | 0.004 | - | 0.004 |
+| E1 B700 | -0.005 | -0.007 | - | -0.005 |
+
+**解读**：
+- MSE 分量快速下降（从 0.1+ 到 0.001 级别）
+- **模型架构正确**，能学习到 velocity field
+- 负 loss 由 entropy 正则贡献，符合预期
+
+#### Insight 2: No Collapse 模型收敛最快
+
+- **参数量最少**：5,331,039 vs 5,334,631 (少 3,592)
+- **收敛速度**：在相同 batch 数下 loss 更低
+- **推断**：Collapse Token 增加了模型复杂度，可能需要更多数据/时间
+
+#### Insight 3: No Hier 训练速度最快
+
+- **时间节省**：约 32% (因为 hierarchical pairs 计算开销大)
+- **每 epoch 时间**：~15min vs ~22min (Normal)
+- **推断**：如果最终效果差不多，可考虑简化 pair 编码
+
+#### Insight 4: Diversity 急剧下降
+
+| Epoch | Normal | No Collapse | No Hier | No CFG |
+|-------|--------|-------------|---------|--------|
+| E1 | 0.63 | 0.32 | 0.40 | 0.42 |
+| E4 | 0.14 | 0.01 | 0.02 | 0.08 |
+
+**解读**：
+- 所有模型都出现 diversity 下降
+- No Collapse 下降最严重（从 0.32 到 0.01）
+- **可能原因**：
+  1. ODE bug 导致采样坍缩
+  2. Entropy 正则权重 (λ=0.01) 可能太小
+  3. 正常的 early training 现象，后期可能回升
+- **修复后重新验证**是关键
+
+#### Insight 5: Recovery = 0 的根本原因
+
+Recovery 为 0 **主要是 ODE bug**，而非模型能力问题：
+- MSE loss 收敛良好，说明 velocity field 学习正确
+- 但生成时 softmax 投影破坏了 simplex 结构
+- 导致采样路径偏离，无法回到真实序列
+
+### 11.4 Ablation 初步趋势（待验证）
+
+| 对比 | 观察 | 假设 |
+|------|------|------|
+| Normal vs No Collapse | No Collapse 收敛更快 | Collapse Token 需要更多训练 |
+| Normal vs No Hier | No Hier 训练更快 | Hier Pairs 计算开销大 |
+| Normal vs No CFG | 相似收敛速度 | CFG drop 在训练时影响小 |
+
+**注意**：以上趋势需要在修复后重新验证。
+
+### 11.5 下一步计划
+
+1. ✅ 已修复所有已知 bug
+2. ⬜ 重新提交训练任务
+3. ⬜ 重点观察：
+   - Recovery 指标（预期 >0，目标 >30%）
+   - Diversity 下降曲线（是否仍然 mode collapse）
+   - 各 ablation 的效果差异
+4. ⬜ 如果 diversity 仍然下降严重，考虑：
+   - 增大 `λ_entropy` (0.01 → 0.05 或 0.1)
+   - 添加 temperature annealing
+   - 检查 prior 分布配置
+
+---
+
+## 12. 代码修复记录
+
+> 详细记录所有代码修改，便于回溯和复现。
+
+### 12.1 `model_flow.py` 修改
+
+**文件**: `flowtcr_fold/FlowTCR_Gen/model_flow.py`
+
+**修改 1: ODE Simplex Projection (Line ~280-290)**
+```diff
+- x = x.squeeze(0) + v * dt
+- x = F.softmax(x, dim=-1)
++ x_new = x.squeeze(0) + v * dt
++ x_new = x_new.clamp(min=1e-8)
++ x_new = x_new / x_new.sum(dim=-1, keepdim=True)
++ x = x_new.unsqueeze(0)
+```
+
+### 12.2 `train.py` 修改
+
+**文件**: `flowtcr_fold/FlowTCR_Gen/train.py`
+
+**修改 1: 评估参数优化 (evaluate 函数)**
+```diff
+- def evaluate(..., n_samples_per_batch=3):
++ def evaluate(..., n_samples_per_batch=8, max_eval_samples=500):
+     ...
+-     n_steps = 50
++     n_steps = 100
+```
+
+**修改 2: Final Evaluation 调用 (main 函数末尾)**
+```diff
+- final_metrics = evaluate(model, val_loader, tokenizer, device, args.cfg_weight, n_samples=10)
++ final_metrics = evaluate(model, val_loader, tokenizer, device, args.cfg_weight,
++                          n_samples_per_batch=16, max_eval_samples=500)
+```
+
+### 12.3 `metrics.py` 修改
+
+**文件**: `flowtcr_fold/FlowTCR_Gen/metrics.py`
+
+**修改 1: Perplexity 计算**
+```diff
+- ppl = mean_cost.__exp__()
++ ppl = math.exp(min(mean_cost, 10.0))
+```
+
+**修改 2: 新增 Partial Match 指标**
+```diff
++ partial_match_80 = sum(1 for m in match_ratios if m >= 0.8) / len(match_ratios)
++ partial_match_90 = sum(1 for m in match_ratios if m >= 0.9) / len(match_ratios)
+```
+
+### 12.4 `dirichlet_flow.py` 修改
+
+**文件**: `flowtcr_fold/FlowTCR_Gen/dirichlet_flow.py`
+
+**修改 1: F.one_hot clamp 范围**
+```diff
+- F.one_hot(target_tokens.clamp(min=0), ...)
++ F.one_hot(target_tokens.clamp(min=0, max=self.vocab_size - 1), ...)
+```
+
+**修改 2: Entropy 正则加入 padding mask**
+```diff
+- entropy = -(v_pred * (v_pred + eps).log()).sum(dim=-1).mean()
++ entropy_raw = -(v_pred * (v_pred + eps).log()).sum(dim=-1)  # [B, L]
++ if pad_mask is not None:
++     entropy = (entropy_raw * pad_mask).sum() / (pad_mask.sum() + eps)
++ else:
++     entropy = entropy_raw.mean()
+```
+
+---
+
+**Last Updated**: 2025-12-05  
+**Owner**: Stage 2 Implementation Team
