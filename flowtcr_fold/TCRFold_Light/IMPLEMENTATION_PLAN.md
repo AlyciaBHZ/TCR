@@ -720,14 +720,17 @@ E_bind_per_contact: -1.76 kcal/mol/contact
 E_bind_per_residue: -1.81 kcal/mol/residue
 ```
 
-### Phase 3A: PPI 结构预训练
-- [ ] 实现 `TCRFoldProphet` 类（升级自 TCRFoldLight）
-- [ ] 实现 `PPIDataset` 类（加载 `.npz` 样本）
-- [ ] 实现 `StructureHead`（可选 IPA）
-- [ ] 实现 `EnergyHead`
-- [ ] 实现 `compute_structure_loss()`
-- [ ] 训练脚本 `train_ppi.py`
+### Phase 3A: PPI 结构预训练 (2025-12-04 脚本完成 ✅)
+- [x] 实现 `TCRFoldProphet` 类（升级自 TCRFoldLight）→ `tcrfold_prophet.py`
+- [x] 更新 `PPIDataset` 类（支持 merged .npz 字段）→ `ppi_dataset.py`
+- [x] 实现 `DistanceHead`（64 bins, 2-22Å）
+- [x] 实现 `ContactHead`（二值接触）
+- [x] 实现 `EnergyHead`（E_φ surrogate）
+- [x] 实现 `compute_structure_loss()` + `compute_contact_loss()` + `compute_distance_loss()`
+- [x] 训练脚本 `train_phase3a.py`
+- [x] GPU sbatch 脚本 `run_phase3a.sbatch`
 - [ ] 训练 100 epochs，保存 checkpoint
+- [ ] 验证 Contact Precision > 50%, Distance MAE < 2.0Å
 
 ### Phase 3B: 能量 Surrogate
 - [ ] 加载 3A checkpoint
@@ -1058,6 +1061,16 @@ python flowtcr_fold/TCRFold_Light/process_pdb/compute_evoef2_batch.py \
 # Step 0.4: 结构+能量合并（生成包含派生能量的 merged .npz）
 python flowtcr_fold/TCRFold_Light/process_pdb/merge_structure_energy.py \
     --npz_dir flowtcr_fold/data/pdb_structures/processed \
-    --energy_json flowtcr_fold/data/energy_cache.jsonl \
-    --out_dir flowtcr_fold/data/pdb_structures/merged
+    --energy_json flowtcr_fold/data/energy_cache_full.jsonl \
+    --out_dir flowtcr_fold/data/ppi_merged \
+    --skip_missing_energy
+
+# Phase 3A: PPI 结构预训练
+sbatch flowtcr_fold/TCRFold_Light/run_phase3a.sbatch
+# 或手动运行:
+python flowtcr_fold/TCRFold_Light/train_phase3a.py \
+    --data_dir flowtcr_fold/data/ppi_merged \
+    --out_dir checkpoints/stage3_phase_a \
+    --epochs 100 --batch_size 4 --lr 1e-4 \
+    --s_dim 384 --z_dim 128 --n_layers 8
 ```

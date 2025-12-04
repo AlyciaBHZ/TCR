@@ -67,3 +67,21 @@ GPU: NVIDIA A100 80GB PCIe
   [Epoch 1 Batch 2300] loss=-0.0201 mse=0.0118
   [Epoch 1 Batch 2350] loss=-0.0290 mse=0.0029
   [Epoch 1 Batch 2400] loss=-0.0270 mse=0.0049
+  [Epoch 1 Batch 2450] loss=-0.0270 mse=0.0049
+  [Epoch 1 Batch 2500] loss=-0.0267 mse=0.0052
+  [Epoch 1 Batch 2550] loss=-0.0287 mse=0.0032
+  [Epoch 1 Batch 2600] loss=-0.0271 mse=0.0048
+  [Epoch 1 Batch 2650] loss=-0.0295 mse=0.0024
+  [Epoch 1 Batch 2700] loss=-0.0286 mse=0.0033
+  [Epoch 1 Batch 2750] loss=-0.0282 mse=0.0037
+  [Epoch 1 Batch 2800] loss=-0.0282 mse=0.0037
+  [Epoch 1 Batch 2850] loss=-0.0284 mse=0.0035
+  [Epoch 1 Batch 2900] loss=-0.0282 mse=0.0037
+  [Epoch 1 Batch 2950] loss=-0.0278 mse=0.0041
+  [Epoch 1 Batch 3000] loss=-0.0271 mse=0.0048
+  [Epoch 1 Batch 3050] loss=-0.0302 mse=0.0016
+  [Epoch 1 Batch 3100] loss=-0.0289 mse=0.0030
+  [Epoch 1 Batch 3150] loss=-0.0280 mse=0.0039
+  [Epoch 1 Batch 3200] loss=-0.0290 mse=0.0029
+  [Epoch 1 Batch 3250] loss=-0.0304 mse=0.0015
+  [Epoch 1 Batch 3300] loss=-0.0283 mse=0.0036

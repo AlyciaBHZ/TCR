@@ -9,6 +9,7 @@ __pycache__/
 
 # === 模型权重 (大文件杀手) ===
 *.pt
+*.cif
 *.pth
 *.ckpt
 *.json
